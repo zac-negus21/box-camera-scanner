@@ -1,0 +1,1468 @@
+<!doctype html>
+<html lang="en">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
+<meta charset="utf-8">
+<title>Box Camera Scanner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: camera viewport is the hero on the left, the three steps stack on the right, SQL spans the full width below. Stacks on phones. */
+:root {
+  --bg: #ECEFF2;
+  --surface: #FFFFFF;
+  --surface-2: #F4F6F8;
+  --ink: #121A23;
+  --muted: #5A6573;
+  --line: #D4DAE1;
+  --line-strong: #A3AEBA;
+  --laser: #DA2C26;
+  --laser-soft: rgba(218, 44, 38, .16);
+  --on-strong: #FFFFFF;
+  --ok: #16764A;
+  --ok-soft: #DFF2E8;
+  --warn: #985A00;
+  --warn-soft: #FAEFD9;
+  --btn: #121A23;
+  --btn-fg: #FFFFFF;
+  --focus: #2F6BD8;
+  --code-bg: #F6F8FA;
+  --kw: #2450A8;
+  --str: #7B3A99;
+  /* The camera surface is dark in both themes; overlay colours sit on video, not on the page. */
+  --vp-bg: #0B0F14;
+  --vp-fg: #E4E9EE;
+  --vp-muted: #9AA6B2;
+  --ov-ok: #36D484;
+  --ov-pend: #FFB224;
+  --ov-box: #FF4B40;
+  --ov-cand: #6FB7FF;
+  --ov-muted: #A7B0BA;
+
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1218; --surface: #151C24; --surface-2: #1B242E; --ink: #E4E9EE; --muted: #93A0AE;
+    --line: #27323D; --line-strong: #4A5765; --laser: #FF4B40; --laser-soft: rgba(255, 75, 64, .22);
+    --on-strong: #0D1218; --ok: #41C486; --ok-soft: rgba(65, 196, 134, .14); --warn: #F2A541;
+    --warn-soft: rgba(242, 165, 65, .14); --btn: #E4E9EE; --btn-fg: #0D1218; --focus: #7FA8FF;
+    --code-bg: #10161D; --kw: #8DB2FF; --str: #D7A6F2; --vp-bg: #06090C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1218; --surface: #151C24; --surface-2: #1B242E; --ink: #E4E9EE; --muted: #93A0AE;
+  --line: #27323D; --line-strong: #4A5765; --laser: #FF4B40; --laser-soft: rgba(255, 75, 64, .22);
+  --on-strong: #0D1218; --ok: #41C486; --ok-soft: rgba(65, 196, 134, .14); --warn: #F2A541;
+  --warn-soft: rgba(242, 165, 65, .14); --btn: #E4E9EE; --btn-fg: #0D1218; --focus: #7FA8FF;
+  --code-bg: #10161D; --kw: #8DB2FF; --str: #D7A6F2; --vp-bg: #06090C;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+code { font-family: var(--font-mono); font-size: .92em; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+
+/* Header */
+.top {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 12px 20px; padding-bottom: 16px; border-bottom: 1px solid var(--line);
+}
+h1 {
+  font-family: var(--font-display); font-weight: 700; font-size: 32px; line-height: 1;
+  letter-spacing: .02em; text-transform: uppercase; margin: 0; text-wrap: balance;
+}
+.tagline { color: var(--muted); margin: 6px 0 0; max-width: 60ch; }
+.top-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.job {
+  display: flex; align-items: center; gap: 8px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 4px 4px 4px 12px;
+}
+.job label, .label-caps {
+  font-family: var(--font-display); font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; font-size: 13px; color: var(--muted);
+}
+.job input {
+  width: 8ch; font-family: var(--font-mono); font-size: 16px; border: 1px solid transparent;
+  background: var(--surface-2); border-radius: 6px; padding: 6px 8px;
+}
+.job input[aria-invalid="true"] { border-color: var(--warn); background: var(--warn-soft); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 40px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: var(--surface); font-weight: 500;
+}
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn svg { width: 16px; height: 16px; flex: none; }
+.btn-primary { min-height: 46px; font-size: 16px; font-weight: 600; background: var(--btn); color: var(--btn-fg); border-color: var(--btn); }
+.btn-primary:hover:not(:disabled) { background: var(--btn); opacity: .88; }
+.btn-wide { width: 100%; }
+.btn-small { min-height: 34px; padding: 0 12px; font-size: 14px; }
+.btn.btn-confirm { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+.link-btn { background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; font-weight: 600; }
+
+/* Main grid */
+.grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Camera panel */
+.camera { display: flex; flex-direction: column; gap: 10px; min-width: 0; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+@media (max-width: 900px) { .camera { position: static; } }
+.viewport {
+  position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 72vh; max-width: 100%;
+  background: var(--vp-bg); color: var(--vp-fg); border-radius: var(--radius); overflow: hidden;
+}
+.viewport video, .viewport img.photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.viewport canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.reticle {
+  position: absolute; inset: 7%; pointer-events: none; opacity: .75;
+  background:
+    linear-gradient(var(--ov-box), var(--ov-box)) top left / 30px 3px no-repeat,
+    linear-gradient(var(--ov-box), var(--ov-box)) top left / 3px 30px no-repeat,
+    linear-gradient(var(--ov-box), var(--ov-box)) top right / 30px 3px no-repeat,
+    linear-gradient(var(--ov-box), var(--ov-box)) top right / 3px 30px no-repeat,
+    linear-gradient(var(--ov-box), var(--ov-box)) bottom left / 30px 3px no-repeat,
+    linear-gradient(var(--ov-box), var(--ov-box)) bottom left / 3px 30px no-repeat,
+    linear-gradient(var(--ov-box), var(--ov-box)) bottom right / 30px 3px no-repeat,
+    linear-gradient(var(--ov-box), var(--ov-box)) bottom right / 3px 30px no-repeat;
+}
+.mode-pill {
+  position: absolute; bottom: 12px; left: 12px; max-width: calc(100% - 24px);
+  padding: 5px 10px; border-radius: 6px; background: rgba(6, 9, 12, .72);
+  font-family: var(--font-display); font-weight: 600; font-size: 14px; letter-spacing: .08em; text-transform: uppercase;
+  display: flex; align-items: center; gap: 8px; color: var(--vp-fg);
+}
+.mode-pill .rec { width: 8px; height: 8px; border-radius: 50%; background: var(--ov-box); flex: none; animation: rec 1.2s ease-in-out infinite; }
+.mode-pill[data-mode="photo"] .rec { background: var(--ov-cand); animation: none; }
+@keyframes rec { 50% { opacity: .25; } }
+.vp-empty {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 24px; text-align: center;
+}
+.vp-title { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 22px; text-transform: uppercase; letter-spacing: .06em; }
+.vp-text { margin: 0; color: var(--vp-muted); max-width: 46ch; }
+.vp-empty .btn { border-color: rgba(228, 233, 238, .35); background: transparent; color: var(--vp-fg); }
+.vp-empty .btn:hover:not(:disabled) { background: rgba(228, 233, 238, .08); }
+.vp-empty .btn-primary { background: var(--vp-fg); color: var(--vp-bg); border-color: var(--vp-fg); }
+.vp-empty .btn-primary:hover:not(:disabled) { background: var(--vp-fg); }
+.vp-busy {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+  padding: 6px 12px; border-radius: 999px; background: rgba(6, 9, 12, .78); color: var(--vp-fg); font-size: 14px;
+}
+
+.cam-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cam-select { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 220px; }
+.cam-select select {
+  min-width: 0; flex: 1; min-height: 40px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: var(--surface);
+}
+.cam-status { font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; border: 2.5px solid; display: inline-block; }
+
+/* Steps */
+.step {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0;
+}
+.step[data-state="locked"] { background: transparent; border-style: dashed; }
+.step[data-state="locked"] h2 { color: var(--muted); }
+.step-head { display: flex; align-items: center; gap: 10px; }
+.step-num {
+  flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-display); font-weight: 700; font-size: 15px;
+  border: 1.5px solid var(--line-strong); color: var(--muted);
+}
+.step[data-state="active"] .step-num { background: var(--laser); border-color: var(--laser); color: var(--on-strong); }
+.step[data-state="done"] .step-num { background: var(--ok); border-color: var(--ok); color: var(--on-strong); }
+h2 {
+  font-family: var(--font-display); font-weight: 600; font-size: 19px; line-height: 1.1;
+  text-transform: uppercase; letter-spacing: .05em; margin: 0;
+}
+.step-head h2 { flex: 1; }
+.count { font-size: 14px; color: var(--muted); white-space: nowrap; }
+.count b { font-family: var(--font-mono); font-size: 20px; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.hint { margin: 0; font-size: 14px; color: var(--muted); }
+.msg { margin: 0; min-height: 1.45em; font-size: 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.msg:empty { min-height: 0; }
+.msg[data-kind="ok"] { color: var(--ok); }
+.msg[data-kind="warn"] { color: var(--warn); }
+.code-inline { font-family: var(--font-mono); font-weight: 600; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.inline-form { display: flex; gap: 8px; }
+.inline-form input {
+  flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 16px; padding: 8px 10px;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2);
+}
+
+/* Box candidates */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips:empty { display: none; }
+.chip {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 12px;
+  border-radius: 8px; border: 1.5px solid var(--ink); background: var(--surface);
+  font-family: var(--font-mono); font-size: 15px; font-weight: 600;
+}
+.chip small { font-family: var(--font-body); font-weight: 500; font-size: 12px; color: var(--muted); }
+.chip[data-eligible="false"] { border-color: var(--line-strong); border-style: dashed; color: var(--muted); }
+.chip:hover { background: var(--surface-2); }
+
+/* Box label */
+.box-label {
+  border: 2px solid var(--ink); border-radius: 6px; padding: 10px 14px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 2px 12px;
+}
+.box-kicker { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: .14em; font-size: 15px; }
+.box-value { font-family: var(--font-mono); font-weight: 600; font-size: 30px; line-height: 1.1; text-align: right; overflow-wrap: anywhere; }
+.box-sub { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+
+/* Item list */
+.list {
+  list-style: none; margin: 0; padding: 0; max-height: min(46vh, 420px); overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.list:empty { display: none; }
+.list li {
+  display: grid; grid-template-columns: 4ch minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  padding: 5px 6px 5px 10px; border-bottom: 1px solid var(--line);
+}
+.list li:last-child { border-bottom: 0; }
+.idx { font-family: var(--font-mono); font-size: 13px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.list .code { font-family: var(--font-mono); font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
+.src { font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rm {
+  width: 34px; height: 34px; border-radius: 6px; border: 1px solid transparent; background: transparent;
+  color: var(--muted); font-size: 20px; line-height: 1;
+}
+.rm:hover { border-color: var(--line); color: var(--ink); background: var(--surface-2); }
+.list li.new { animation: newrow 1.4s ease-out; }
+@keyframes newrow { from { background: var(--ok-soft); } to { background: transparent; } }
+.empty-list { margin: 0; padding: 14px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--muted); font-size: 14px; }
+@media (max-width: 420px) {
+  .list li { grid-template-columns: 4ch minmax(0, 1fr) auto; }
+  .src { display: none; }
+}
+
+/* Panels: settings, SQL */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.panel-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.panel-head h2 { flex: 1; }
+.sql-body { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+pre.sql {
+  margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px 16px; overflow: auto; max-height: 560px;
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.55; tab-size: 4;
+}
+.tok-c { color: var(--muted); font-style: italic; }
+.tok-k { color: var(--kw); font-weight: 600; }
+.tok-s { color: var(--str); }
+
+.settings-body { padding: 14px 16px 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 18px 28px; }
+fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+legend { padding: 0; margin-bottom: 8px; }
+.radio, .check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.radio input, .check input { margin-top: 4px; accent-color: var(--laser); }
+.radio small, .field small { display: block; color: var(--muted); font-size: 13px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.field input, .field select, .lookup input {
+  min-width: 0; font-family: var(--font-mono); font-size: 14px; padding: 7px 10px; min-height: 36px;
+  border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2);
+}
+.field select { font-family: var(--font-body); }
+.lookup { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lookup label { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); align-items: center; gap: 10px; font-size: 14px; }
+.lookup input[aria-invalid="true"] { border-color: var(--warn); background: var(--warn-soft); }
+.warn-text { color: var(--warn); }
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-pill .rec { animation: none; }
+  .list li.new { animation: none; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Box Camera Scanner</h1>
+      <p class="tagline">Point the camera into the box. Every barcode it reads goes on the list, then you copy the SQL.</p>
+    </div>
+    <div class="top-controls">
+      <div class="job">
+        <label for="job-input">Job</label>
+        <input id="job-input" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="No.">
+      </div>
+      <button type="button" class="btn" id="settings-btn" aria-expanded="false" aria-controls="settings">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 4h7M13 4h1M2 12h2M8 12h6"/><circle cx="11" cy="4" r="1.8"/><circle cx="6" cy="12" r="1.8"/></svg>
+        Settings
+      </button>
+    </div>
+  </header>
+
+  <section class="panel" id="settings" hidden aria-labelledby="settings-title">
+    <div class="panel-head">
+      <h2 id="settings-title">Settings</h2>
+      <button type="button" class="btn btn-small" id="settings-close">Done</button>
+    </div>
+    <div class="settings-body">
+      <fieldset>
+        <legend class="label-caps">Database</legend>
+        <div class="lookup">
+          <label for="db-items">Items table <input id="db-items" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="schema.table"></label>
+          <label for="db-view">Barcode view <input id="db-view" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="schema.view"></label>
+          <p class="hint">The SQL sets BoxID in the items table, finding each item through the barcode view&rsquo;s itemid, text and jobid columns.</p>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend class="label-caps">Box labels contain</legend>
+        <label class="radio"><input type="radio" name="boxmode" value="id" id="mode-id">
+          <span>The box ID<small>A number like 16092. It goes straight into the item&rsquo;s BoxID column.</small></span></label>
+        <label class="radio"><input type="radio" name="boxmode" value="lookup" id="mode-lookup">
+          <span>A box barcode<small>The SQL looks up the box ID from the barcode.</small></span></label>
+        <div class="lookup" id="lookup-fields" hidden>
+          <label for="lk-table">Box table <input id="lk-table" autocomplete="off" spellcheck="false"></label>
+          <label for="lk-code">Barcode column <input id="lk-code" autocomplete="off" spellcheck="false"></label>
+          <label for="lk-id">Box ID column <input id="lk-id" autocomplete="off" spellcheck="false"></label>
+          <p class="hint warn-text">These names are a guess. Check them against your database before you run the SQL.</p>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend class="label-caps">Reading</legend>
+        <label class="field" for="pattern-input">Only keep item barcodes matching
+          <input id="pattern-input" autocomplete="off" spellcheck="false" placeholder="*L7">
+          <small>Use * for any run of characters. Leave blank to keep every barcode.</small></label>
+        <label class="field" for="reads-select">Reads before an item is added
+          <select id="reads-select">
+            <option value="1">1 (fastest)</option>
+            <option value="2">2 (recommended)</option>
+            <option value="3">3 (fewest misreads)</option>
+          </select>
+          <small>Only applies to the live camera. Photos add what they find.</small></label>
+        <label class="field" for="engine-select">Barcode reader
+          <select id="engine-select">
+            <option value="auto">Automatic</option>
+            <option value="zxing">ZXing (works in every browser, slower)</option>
+          </select></label>
+        <label class="check"><input type="checkbox" id="sound"> <span>Beep when items are added</span></label>
+      </fieldset>
+    </div>
+  </section>
+
+  <main class="grid">
+    <section class="camera" aria-label="Camera">
+      <div class="viewport" id="viewport">
+        <video id="video" playsinline muted autoplay hidden></video>
+        <img class="photo" id="photo" alt="Last photo" hidden>
+        <canvas class="overlay" id="overlay" aria-hidden="true"></canvas>
+        <div class="reticle" id="reticle" hidden></div>
+        <div class="mode-pill" id="mode-pill" hidden><span class="rec" aria-hidden="true"></span><span id="mode-text"></span></div>
+        <div class="vp-empty" id="vp-empty">
+          <p class="vp-title" id="vp-title">Camera is off</p>
+          <p class="vp-text" id="vp-text">Start the camera and point it at the box label first, then into the box.</p>
+          <div class="row-actions" style="justify-content:center">
+            <button type="button" class="btn btn-primary" id="start-btn">Start camera</button>
+            <button type="button" class="btn" id="vp-photo-btn">Take a photo</button>
+          </div>
+        </div>
+        <div class="vp-busy" id="vp-busy" hidden>Reading photo&hellip;</div>
+      </div>
+
+      <div class="cam-bar">
+        <div class="cam-select" id="cam-select-wrap" hidden>
+          <label class="label-caps" for="cam-select">Camera</label>
+          <select id="cam-select"></select>
+        </div>
+        <button type="button" class="btn" id="stop-btn" hidden>Stop camera</button>
+        <button type="button" class="btn" id="live-btn" hidden>Back to live view</button>
+        <button type="button" class="btn" id="photo-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h2.5l1.2-1.8h4.6L11.5 5H14v8H2z"/><circle cx="8" cy="9" r="2.4"/></svg>
+          Take a photo</button>
+        <button type="button" class="btn" id="choose-btn">Choose photos</button>
+        <input type="file" class="vh" id="photo-input" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+        <input type="file" class="vh" id="choose-input" accept="image/*" multiple tabindex="-1" aria-hidden="true">
+      </div>
+      <p class="msg" id="cam-msg" role="status" aria-live="polite"></p>
+      <div class="legend" aria-label="Outline colours">
+        <span><i style="border-color:var(--ov-ok)"></i>On the list</span>
+        <span><i style="border-color:var(--ov-pend)"></i>Confirming</span>
+        <span><i style="border-color:var(--ov-box)"></i>Box label</span>
+        <span><i style="border-color:var(--ov-cand)"></i>Could be the box</span>
+        <span><i style="border-color:var(--ov-muted)"></i>Ignored by your filter</span>
+        <span class="cam-status" id="cam-status"></span>
+      </div>
+    </section>
+
+    <div class="side">
+      <section class="step" id="step-box" data-state="active">
+        <div class="step-head"><span class="step-num">1</span><h2>Destination box</h2></div>
+        <div class="stack" id="box-empty">
+          <p class="hint" id="box-hint">Point the camera at the box label. If only one label is in view it's picked automatically. Otherwise, tap the right one.</p>
+          <div class="chips" id="cands" aria-label="Barcodes in view"></div>
+          <form class="inline-form" id="box-form" autocomplete="off">
+            <label class="vh" for="box-input">Type the box number</label>
+            <input id="box-input" placeholder="or type it" spellcheck="false" autocapitalize="off" enterkeyhint="done">
+            <button type="submit" class="btn">Set box</button>
+          </form>
+          <p class="msg" id="box-msg" role="status" aria-live="polite"></p>
+        </div>
+        <div class="stack" id="box-set" hidden>
+          <div class="box-label">
+            <span class="box-kicker">Box</span>
+            <span class="box-value" id="box-value"></span>
+            <span class="box-sub" id="box-sub"></span>
+          </div>
+          <div class="row-actions"><button type="button" class="btn btn-small" id="box-change">Change box</button></div>
+        </div>
+      </section>
+
+      <section class="step" id="step-items" data-state="locked">
+        <div class="step-head"><span class="step-num">2</span><h2>Items</h2><span class="count"><b id="count">0</b> found</span></div>
+        <p class="hint" id="items-hint">Set the box first. Then move the camera slowly across the labels in the box.</p>
+        <p class="msg" id="item-msg" role="status" aria-live="polite"></p>
+        <p class="empty-list" id="list-empty">No items yet. Barcodes the camera reads show up here, newest first.</p>
+        <ol class="list" id="list"></ol>
+        <form class="inline-form" id="item-form" autocomplete="off">
+          <label class="vh" for="item-input">Type a barcode the camera can't read</label>
+          <input id="item-input" placeholder="Type a barcode the camera missed" spellcheck="false" autocapitalize="off" enterkeyhint="done" disabled>
+          <button type="submit" class="btn" id="item-add" disabled>Add</button>
+        </form>
+        <div class="row-actions">
+          <button type="button" class="btn btn-small" id="undo-btn">Remove last</button>
+          <button type="button" class="btn btn-small" id="clear-btn">Clear list</button>
+        </div>
+      </section>
+
+      <section class="step" id="step-sql" data-state="locked">
+        <div class="step-head"><span class="step-num">3</span><h2>Generate SQL</h2></div>
+        <p class="hint" id="gen-hint"></p>
+        <button type="button" class="btn btn-primary btn-wide" id="gen-btn" disabled>Generate SQL</button>
+        <button type="button" class="btn btn-wide" id="next-btn" hidden>Start next box</button>
+      </section>
+    </div>
+  </main>
+
+  <section class="panel" id="sql-panel" hidden aria-labelledby="sql-title">
+    <div class="panel-head">
+      <h2 id="sql-title">SQL</h2>
+      <button type="button" class="btn btn-small" id="copy-btn">Copy SQL</button>
+    </div>
+    <div class="sql-body">
+      <p class="hint">Run it top to bottom. Check the preview and the final check, then run <code>COMMIT;</code> to save the move, or <code>ROLLBACK;</code> to undo it. Copied on an iPhone? It pastes on your Mac through Universal Clipboard.</p>
+      <p class="msg" id="copy-msg" role="status" aria-live="polite"></p>
+      <pre class="sql"><code id="sql-code"></code></pre>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ---------- state ---------- */
+  const KEY = 'box-camera-scanner.v1';
+  const SITE_DEFAULTS = { jobId: '', itemTable: '', barcodeView: '', lookupTable: '' };
+  const DEFAULTS = {
+    jobId: SITE_DEFAULTS.jobId, boxMode: 'id',
+    itemTable: SITE_DEFAULTS.itemTable, barcodeView: SITE_DEFAULTS.barcodeView,
+    lookupTable: SITE_DEFAULTS.lookupTable, lookupCodeCol: 'Barcode', lookupIdCol: 'BoxID',
+    pattern: '', confirmReads: 2, engine: 'auto', cameraId: '',
+    sound: true, box: null, items: []
+  };
+  const IDENT = /^[A-Za-z0-9_.\[\]]+$/;
+  const NATIVE_FORMATS = ['code_128', 'code_39', 'code_93', 'codabar', 'itf', 'qr_code', 'data_matrix'];
+  const ZX_FORMATS = ['CODE_128', 'CODE_39', 'CODE_93', 'CODABAR', 'ITF', 'QR_CODE', 'DATA_MATRIX'];
+  const ZX_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = id => document.getElementById(id);
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const s = JSON.parse(raw);
+        const out = Object.assign({}, DEFAULTS, s);
+        out.items = Array.isArray(s.items) ? s.items.filter(i => i && typeof i.code === 'string') : [];
+        out.confirmReads = [1, 2, 3].includes(Number(out.confirmReads)) ? Number(out.confirmReads) : 2;
+        return out;
+      }
+    } catch (e) {}
+    return Object.assign({}, DEFAULTS, { items: [] });
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  let state = load();
+  let generated = false, genStamp = '', lastSql = '', copiedSql = null;
+
+  const el = {};
+  ['job-input', 'settings-btn', 'settings', 'settings-close', 'db-items', 'db-view', 'mode-id', 'mode-lookup', 'lookup-fields', 'lk-table', 'lk-code', 'lk-id',
+   'pattern-input', 'reads-select', 'engine-select', 'sound',
+   'viewport', 'video', 'photo', 'overlay', 'reticle', 'mode-pill', 'mode-text', 'vp-empty', 'vp-title', 'vp-text', 'start-btn', 'vp-photo-btn', 'vp-busy',
+   'cam-select-wrap', 'cam-select', 'stop-btn', 'live-btn', 'photo-btn', 'choose-btn', 'photo-input', 'choose-input', 'cam-msg', 'cam-status',
+   'step-box', 'box-empty', 'box-hint', 'cands', 'box-form', 'box-input', 'box-msg', 'box-set', 'box-value', 'box-sub', 'box-change',
+   'step-items', 'count', 'items-hint', 'item-msg', 'list-empty', 'list', 'item-form', 'item-input', 'item-add', 'undo-btn', 'clear-btn',
+   'step-sql', 'gen-hint', 'gen-btn', 'next-btn', 'sql-panel', 'copy-btn', 'copy-msg', 'sql-code'
+  ].forEach(id => { el[id.replace(/-([a-z])/g, (m, c) => c.toUpperCase())] = $(id); });
+
+  /* ---------- helpers ---------- */
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const q = v => "'" + String(v).replace(/'/g, "''") + "'";
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const timeOf = t => { try { return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (e) { return ''; } };
+  const keyOf = s => String(s).trim().toUpperCase();
+  const tick = () => new Promise(r => setTimeout(r, 0));
+
+  function setMsg(node, kind, html, action) {
+    node.dataset.kind = kind || '';
+    node.innerHTML = html ? `<span>${html}</span>` : '';
+    if (action) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'link-btn'; b.textContent = action.label;
+      b.addEventListener('click', action.fn);
+      node.appendChild(b);
+    }
+  }
+
+  let audioCtx = null;
+  function beep(kind) {
+    if (!state.sound) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const now = audioCtx.currentTime;
+      const seq = kind === 'ok' ? [[1760, 0, 0.07]] : [[220, 0, 0.12], [220, 0.17, 0.12]];
+      for (const [f, start, dur] of seq) {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = kind === 'ok' ? 'sine' : 'square';
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, now + start);
+        g.gain.exponentialRampToValueAtTime(kind === 'ok' ? 0.18 : 0.07, now + start + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+        o.connect(g).connect(audioCtx.destination);
+        o.start(now + start); o.stop(now + start + dur + 0.02);
+      }
+    } catch (e) {}
+  }
+
+  function patternRe() {
+    const p = String(state.pattern || '').trim();
+    if (!p) return null;
+    const body = p.split('').map(c => c === '*' ? '.*' : c === '?' ? '.' : c.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('');
+    try { return new RegExp('^' + body + '$', 'i'); } catch (e) { return null; }
+  }
+  let filterRe = patternRe();
+  const matchesFilter = text => !filterRe || filterRe.test(text);
+  const isBox = text => !!state.box && keyOf(text) === keyOf(state.box);
+  const listIndex = text => { const k = keyOf(text); return state.items.findIndex(i => keyOf(i.code) === k); };
+  const boxEligible = text => state.boxMode !== 'id' || /^\d+$/.test(String(text).replace(/[,\s]/g, ''));
+
+  /* ---------- barcode readers ---------- */
+  let zxPromise = null;
+  function loadZXing() {
+    if (window.ZXing) return Promise.resolve(window.ZXing);
+    if (!zxPromise) {
+      zxPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = ZX_URL; s.async = true;
+        s.onload = () => window.ZXing ? resolve(window.ZXing) : reject(new Error('no ZXing'));
+        s.onerror = () => { zxPromise = null; reject(new Error('load failed')); };
+        (document.head || document.documentElement).appendChild(s);
+      });
+    }
+    return zxPromise;
+  }
+
+  // ZXing reads one barcode per pass, so blank out each one it finds and read again.
+  function eraseAround(ctx, pts, n) {
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const bw = maxX - minX, bh = maxY - minY, grow = n + 1;
+    let x0, x1, y0, y1;
+    if (pts.length <= 2 && bh <= bw * 0.2) {
+      const half = Math.max(10, bw * 0.2 * grow);
+      x0 = minX - bw * 0.08; x1 = maxX + bw * 0.08; y0 = minY - half; y1 = maxY + half;
+    } else if (pts.length <= 2 && bw <= bh * 0.2) {
+      const half = Math.max(10, bh * 0.2 * grow);
+      x0 = minX - half; x1 = maxX + half; y0 = minY - bh * 0.08; y1 = maxY + bh * 0.08;
+    } else {
+      const padding = Math.max(bw, bh, 12) * 0.35 * grow;
+      x0 = minX - padding; x1 = maxX + padding; y0 = minY - padding; y1 = maxY + padding;
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  }
+
+  async function zxDetectAll(ZX, reader, fmtName, ctx, w, h, maxIter, slow) {
+    const out = [], hits = new Map();
+    for (let i = 0; i < maxIter; i++) {
+      const data = ctx.getImageData(0, 0, w, h).data;
+      const lum = new Uint8ClampedArray(w * h);
+      for (let j = 0, p = 0; j < lum.length; j++, p += 4) lum[j] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
+      let res = null;
+      try {
+        res = reader.decodeWithState(new ZX.BinaryBitmap(new ZX.HybridBinarizer(new ZX.RGBLuminanceSource(lum, w, h))));
+      } catch (e) { res = null; }
+      if (!res) break;
+      const text = res.getText();
+      const pts = (res.getResultPoints() || []).filter(Boolean).map(p => ({ x: p.getX(), y: p.getY() }));
+      const seen = hits.get(text) || 0;
+      if (seen === 0) out.push({ text, format: fmtName(res.getBarcodeFormat()), points: pts });
+      hits.set(text, seen + 1);
+      if (seen >= 3 || !pts.length) break;
+      eraseAround(ctx, pts, seen);
+      if (slow) await tick();
+    }
+    return out;
+  }
+
+  let engine = null;
+  async function getEngine() {
+    if (engine && engine.pref === state.engine) return engine;
+    engine = await buildEngine(state.engine);
+    return engine;
+  }
+  async function buildEngine(pref) {
+    if (pref !== 'zxing' && 'BarcodeDetector' in window) {
+      try {
+        const supported = await window.BarcodeDetector.getSupportedFormats();
+        const formats = NATIVE_FORMATS.filter(f => supported.includes(f));
+        if (formats.length) {
+          const det = new window.BarcodeDetector({ formats });
+          return {
+            pref, name: 'native', label: 'built-in reader', liveSide: 1920, photoSide: 3200,
+            detect: async (canvas) => (await det.detect(canvas)).map(r => ({
+              text: r.rawValue, format: r.format,
+              points: (r.cornerPoints || []).map(p => ({ x: p.x, y: p.y }))
+            }))
+          };
+        }
+      } catch (e) {}
+    }
+    const ZX = await loadZXing();
+    const hints = new Map();
+    hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, ZX_FORMATS.map(f => ZX.BarcodeFormat[f]));
+    hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+    const reader = new ZX.MultiFormatReader();
+    reader.setHints(hints);
+    const fmtName = f => String(ZX.BarcodeFormat[f] || f).toLowerCase();
+    return {
+      pref, name: 'zxing', label: 'ZXing reader', liveSide: 1100, photoSide: 2000,
+      detect: (canvas, ctx, w, h, maxIter, slow) => zxDetectAll(ZX, reader, fmtName, ctx, w, h, maxIter, slow)
+    };
+  }
+
+  const work = document.createElement('canvas');
+  const wctx = work.getContext('2d', { willReadFrequently: true });
+  function drawTo(src, sw, sh, maxSide) {
+    const s = Math.min(1, maxSide / Math.max(sw, sh));
+    const w = Math.max(1, Math.round(sw * s)), h = Math.max(1, Math.round(sh * s));
+    if (work.width !== w) work.width = w;
+    if (work.height !== h) work.height = h;
+    wctx.drawImage(src, 0, 0, w, h);
+    return { canvas: work, ctx: wctx, w, h };
+  }
+
+  /* ---------- camera ---------- */
+  let stream = null, running = false, busy = false, loopTimer = null, overlayTimer = null, wakeLock = null;
+  let view = 'off'; // off | live | photo
+  let lastInView = 0, lastIgnored = 0, readerError = '';
+  const vis = new Map();      // what to outline: key -> {text, points, fw, fh, at, sticky}
+  const pending = new Map();  // live reads waiting for confirmation
+  const cands = new Map();    // box label candidates
+  let photoLeftovers = [];
+
+  const liveAllowed = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) &&
+    !(document.featurePolicy && typeof document.featurePolicy.allowsFeature === 'function' && !document.featurePolicy.allowsFeature('camera'));
+
+  function cameraError(e) {
+    const n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') return 'The live camera is blocked here. Use Take a photo instead, or open this page in a browser where you can allow camera access.';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No camera found. To use your iPhone, keep it near your Mac, signed in to the same Apple ID, with Continuity Camera turned on.';
+    if (n === 'NotReadableError') return 'The camera is busy in another app. Close that app and try again.';
+    return 'The camera could not start. Use Take a photo instead.';
+  }
+
+  async function listCameras() {
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const cur = stream && stream.getVideoTracks()[0] && stream.getVideoTracks()[0].getSettings().deviceId;
+      el.camSelect.replaceChildren(...devs.map((d, i) => {
+        const o = document.createElement('option');
+        o.value = d.deviceId; o.textContent = d.label || `Camera ${i + 1}`;
+        return o;
+      }));
+      if (cur) el.camSelect.value = cur;
+      el.camSelectWrap.hidden = devs.length < 2;
+      return { devs, cur };
+    } catch (e) { return { devs: [], cur: '' }; }
+  }
+
+  async function openStream(deviceId) {
+    const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    const video = deviceId ? Object.assign({ deviceId: { exact: deviceId } }, size) : Object.assign({ facingMode: { ideal: 'environment' } }, size);
+    return navigator.mediaDevices.getUserMedia({ audio: false, video });
+  }
+
+  async function startCamera() {
+    if (!liveAllowed) { setMsg(el.camMsg, 'warn', esc(cameraError({ name: 'NotAllowedError' }))); return; }
+    el.startBtn.disabled = true;
+    setMsg(el.camMsg, '', 'Starting the camera&hellip;');
+    try {
+      try { stream = await openStream(state.cameraId); }
+      catch (e) {
+        if (state.cameraId && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) { state.cameraId = ''; save(); stream = await openStream(''); }
+        else throw e;
+      }
+      el.video.srcObject = stream;
+      el.video.muted = true;
+      await el.video.play().catch(() => {});
+      const { devs, cur } = await listCameras();
+      if (!state.cameraId) {
+        const phone = devs.find(d => /iphone/i.test(d.label));
+        if (phone && phone.deviceId !== cur) {
+          state.cameraId = phone.deviceId; save();
+          stopStream();
+          return startCamera();
+        }
+      }
+      running = true;
+      showView('live');
+      getEngine().catch(() => {});
+      setMsg(el.camMsg, '', '');
+      loop();
+      if (!overlayTimer) overlayTimer = setInterval(drawOverlay, 250);
+      try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    } catch (e) {
+      stopStream();
+      setMsg(el.camMsg, 'warn', esc(cameraError(e)));
+      el.vpTitle.textContent = 'No live camera';
+      el.vpText.textContent = 'Take a photo of the box label instead. The app reads every barcode in each photo.';
+      el.startBtn.hidden = true;
+    } finally {
+      el.startBtn.disabled = false;
+      render();
+    }
+  }
+
+  function stopStream() {
+    running = false;
+    clearTimeout(loopTimer);
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    el.video.srcObject = null;
+    try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) {}
+  }
+
+  function stopCamera() {
+    stopStream();
+    if (view === 'live') showView('off');
+    render();
+  }
+
+  async function loop() {
+    if (!running) return;
+    if (!busy && view === 'live' && !document.hidden && el.video.readyState >= 2 && el.video.videoWidth) {
+      busy = true;
+      try {
+        const eng = await getEngine();
+        const f = drawTo(el.video, el.video.videoWidth, el.video.videoHeight, eng.liveSide);
+        const found = await eng.detect(f.canvas, f.ctx, f.w, f.h, 5, false);
+        if (view === 'live') handleDetections(found, f, 'camera');
+        readerError = '';
+      } catch (e) {
+        readerError = 'The barcode reader could not load. Check your internet connection, then reload the page.';
+        setMsg(el.camMsg, 'warn', esc(readerError));
+      }
+      busy = false;
+    }
+    loopTimer = setTimeout(loop, engine && engine.name === 'native' ? 110 : 40);
+  }
+
+  function showView(v) {
+    view = v;
+    el.video.hidden = v !== 'live';
+    el.photo.hidden = v !== 'photo';
+    el.reticle.hidden = v !== 'live';
+    el.vpEmpty.hidden = v !== 'off';
+    el.modePill.hidden = v === 'off';
+    el.modePill.dataset.mode = v;
+    if (v === 'live' && el.video.videoWidth) el.viewport.style.aspectRatio = `${el.video.videoWidth} / ${el.video.videoHeight}`;
+    if (v === 'photo' && photoDims.w) el.viewport.style.aspectRatio = `${photoDims.w} / ${photoDims.h}`;
+    if (v !== 'photo') { for (const [k, x] of vis) if (x.sticky) vis.delete(k); }
+    drawOverlay();
+  }
+  el.video.addEventListener('loadedmetadata', () => { if (view === 'live') showView('live'); });
+
+  /* ---------- photos ---------- */
+  async function processPhotos(files) {
+    const list = [...files].filter(f => f && /^image\//.test(f.type || 'image/'));
+    if (!list.length) return;
+    let total = 0, added = 0;
+    for (const file of list) {
+      const r = await processPhoto(file);
+      if (!r) continue;
+      total += r.found; added += r.added;
+    }
+    if (list.length > 1) setMsg(el.camMsg, total ? 'ok' : 'warn', esc(`Read ${plural(list.length, 'photo')}: ${plural(total, 'barcode')} found, ${added} new on the list.`));
+  }
+
+  let photoUrl = '';
+  let photoDims = { w: 0, h: 0 };
+  async function processPhoto(file) {
+    el.vpBusy.hidden = false;
+    const img = new Image();
+    try {
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      photoUrl = URL.createObjectURL(file);
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error('load'));
+        img.src = photoUrl;
+      });
+      photoDims = { w: img.naturalWidth, h: img.naturalHeight };
+      el.photo.src = photoUrl;
+    } catch (e) {
+      el.vpBusy.hidden = true;
+      setMsg(el.camMsg, 'warn', 'That image couldn’t be opened. Try a JPEG or PNG.');
+      return null;
+    }
+    for (const [k, x] of vis) if (x.sticky) vis.delete(k);
+    showView('photo');
+    await tick();
+    let found = [];
+    try {
+      const eng = await getEngine();
+      const f = drawTo(img, photoDims.w, photoDims.h, eng.photoSide);
+      found = await eng.detect(f.canvas, f.ctx, f.w, f.h, 40, true);
+      const before = state.items.length;
+      const hadBox = !!state.box;
+      handleDetections(found, f, 'photo');
+      el.vpBusy.hidden = true;
+      const added = state.items.length - before;
+      if (!found.length) {
+        setMsg(el.camMsg, 'warn', 'No barcodes found in that photo. Get closer so each label fills more of the frame, and avoid glare.');
+      } else if (hadBox) {
+        setMsg(el.camMsg, 'ok', esc(`Found ${plural(found.length, 'barcode')} in the photo. ${added} new on the list.`));
+      } else if (!state.box) {
+        setMsg(el.camMsg, '', esc(`Found ${plural(found.length, 'barcode')}. Tap the box label under Destination box.`));
+      }
+      return { found: found.length, added };
+    } catch (e) {
+      el.vpBusy.hidden = true;
+      setMsg(el.camMsg, 'warn', 'The barcode reader could not load. Check your internet connection, then reload the page.');
+      return null;
+    }
+  }
+
+  /* ---------- what to do with each read ---------- */
+  function handleDetections(found, frame, source) {
+    const now = performance.now();
+    const clean = [];
+    for (const f of found) {
+      const text = String(f.text || '').trim();
+      if (!text) continue;
+      clean.push(text);
+      vis.set(keyOf(text), { text, points: f.points || [], fw: frame.w, fh: frame.h, at: now, sticky: source === 'photo' });
+    }
+    lastInView = clean.length;
+    lastIgnored = state.box ? clean.filter(t => !isBox(t) && !matchesFilter(t)).length : 0;
+
+    if (!state.box) {
+      considerBox(clean, source);
+    } else {
+      const added = [];
+      for (const t of clean) if (considerItem(t, source)) added.push(t);
+      if (added.length) {
+        save(); beep('ok');
+        const shown = added.slice(0, 4).map(t => `<span class="code-inline">${esc(t)}</span>`).join(', ');
+        setMsg(el.itemMsg, 'ok', `Added ${shown}${added.length > 4 ? ` and ${added.length - 4} more` : ''}`);
+        render(added);
+      }
+    }
+    drawOverlay();
+    renderLiveStatus();
+  }
+
+  function considerItem(text, source) {
+    if (isBox(text) || !matchesFilter(text) || listIndex(text) >= 0) return false;
+    const k = keyOf(text);
+    if (source === 'photo' || state.confirmReads <= 1) {
+      pending.delete(k);
+      state.items.push({ code: text, t: Date.now(), src: source });
+      return true;
+    }
+    const now = Date.now();
+    const p = pending.get(k);
+    if (!p || now - p.last > 4000) { pending.set(k, { n: 1, last: now }); return false; }
+    p.n++; p.last = now;
+    if (p.n >= state.confirmReads) {
+      pending.delete(k);
+      state.items.push({ code: text, t: Date.now(), src: source });
+      return true;
+    }
+    return false;
+  }
+
+  function considerBox(texts, source) {
+    const now = Date.now();
+    if (source === 'photo') cands.clear();
+    for (const t of texts) {
+      const k = keyOf(t);
+      const c = cands.get(k) || { text: t, n: 0, last: 0 };
+      c.n = now - c.last > 3000 ? 1 : c.n + 1;
+      c.last = now;
+      cands.set(k, c);
+    }
+    if (source !== 'photo') for (const [k, c] of cands) if (now - c.last > 3000) cands.delete(k);
+
+    if (source === 'photo') {
+      const eligible = texts.filter(boxEligible);
+      if (eligible.length === 1 && (state.boxMode === 'id' || texts.length === 1)) {
+        photoLeftovers = texts.filter(t => keyOf(t) !== keyOf(eligible[0]));
+        setBox(eligible[0], 'photo');
+        return;
+      }
+      photoLeftovers = [];
+      if (texts.length) setMsg(el.boxMsg, '', esc(`This photo has ${plural(texts.length, 'barcode')}. Tap the one on the box label.`));
+      renderCands();
+      return;
+    }
+    const recent = [...cands.values()].filter(c => now - c.last < 1500);
+    const recentEligible = recent.filter(c => boxEligible(c.text));
+    if (recentEligible.length === 1 && recentEligible[0].n >= 3 && (state.boxMode === 'id' || recent.length === 1)) {
+      setBox(recentEligible[0].text, 'camera');
+      return;
+    }
+    renderCands();
+  }
+
+  function setBox(raw, source) {
+    const v = String(raw).trim();
+    if (!v) return;
+    let value = v;
+    if (state.boxMode === 'id') {
+      const digits = v.replace(/[,\s]/g, '');
+      if (!/^\d+$/.test(digits)) {
+        beep('warn');
+        setMsg(el.boxMsg, 'warn', `<span class="code-inline">${esc(v)}</span> isn't a box ID number.`, {
+          label: 'Use it as a box barcode instead',
+          fn: () => { setMode('lookup'); openSettings(true); setBox(v, source); }
+        });
+        return;
+      }
+      value = digits;
+    }
+    state.box = value;
+    cands.clear(); pending.clear();
+    for (const k of [...state.items.keys()].reverse()) if (isBox(state.items[k].code)) state.items.splice(k, 1);
+    save(); beep('ok');
+    setMsg(el.boxMsg, '', '');
+    const n = state.items.length;
+    if (source === 'photo' && photoLeftovers.length) {
+      const extra = photoLeftovers.slice();
+      setMsg(el.camMsg, 'ok', esc(`Box ${value} set. The photo also has ${plural(extra.length, 'other barcode')}.`), {
+        label: 'Add them as items',
+        fn: () => {
+          const added = extra.filter(t => considerItem(t, 'photo'));
+          photoLeftovers = [];
+          save(); if (added.length) beep('ok');
+          setMsg(el.camMsg, added.length ? 'ok' : 'warn', esc(added.length ? `Added ${plural(added.length, 'item')} from the photo.` : 'Nothing new to add from that photo.'));
+          render(added);
+        }
+      });
+      photoLeftovers = [];
+    } else if (source === 'photo') {
+      setMsg(el.camMsg, 'ok', esc(`Box ${value} set from the photo. Now take photos of the items.`));
+    }
+    setMsg(el.itemMsg, 'ok', n
+      ? esc(`Box ${value} set. The ${plural(n, 'item')} already on the list will move into it.`)
+      : `Box <span class="code-inline">${esc(value)}</span> set. Now point the camera into the box.`);
+    render();
+  }
+
+  /* ---------- overlay ---------- */
+  function overlayColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const v = n => cs.getPropertyValue(n).trim();
+    return { ok: v('--ov-ok'), pend: v('--ov-pend'), box: v('--ov-box'), cand: v('--ov-cand'), muted: v('--ov-muted') };
+  }
+  function statusOf(text) {
+    if (isBox(text)) return ['box', 'BOX'];
+    if (!state.box) return [boxEligible(text) ? 'cand' : 'muted', ''];
+    if (listIndex(text) >= 0) return ['ok', ''];
+    if (!matchesFilter(text)) return ['muted', 'ignored'];
+    return ['pend', ''];
+  }
+  function drawOverlay() {
+    const c = el.overlay;
+    const cw = c.clientWidth, ch = c.clientHeight;
+    if (!cw || !ch) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.round(cw * dpr), H = Math.round(ch * dpr);
+    if (c.width !== W) c.width = W;
+    if (c.height !== H) c.height = H;
+    const g = c.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, cw, ch);
+    let iw = 0, ih = 0;
+    if (view === 'live') { iw = el.video.videoWidth; ih = el.video.videoHeight; }
+    else if (view === 'photo') { iw = photoDims.w; ih = photoDims.h; }
+    if (!iw || !ih) return;
+    const s = Math.min(cw / iw, ch / ih), ox = (cw - iw * s) / 2, oy = (ch - ih * s) / 2;
+    const col = overlayColors();
+    const now = performance.now();
+    g.lineJoin = 'round';
+    g.font = '600 13px "IBM Plex Mono", ui-monospace, Menlo, monospace';
+    for (const [k, v] of vis) {
+      if (!v.sticky && now - v.at > 600) { vis.delete(k); continue; }
+      if (view === 'live' && v.sticky) continue;
+      const f = (s * iw) / v.fw;
+      let pts = v.points.map(p => ({ x: ox + p.x * f, y: oy + p.y * f }));
+      if (!pts.length) continue;
+      if (pts.length <= 2) {
+        const a = pts[0], b = pts[pts.length - 1];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        const half = Math.max(8, len * 0.14);
+        const nx = -(b.y - a.y) / (len || 1) * half, ny = (b.x - a.x) / (len || 1) * half;
+        pts = [{ x: a.x + nx, y: a.y + ny }, { x: b.x + nx, y: b.y + ny }, { x: b.x - nx, y: b.y - ny }, { x: a.x - nx, y: a.y - ny }];
+      }
+      const [st, tag] = statusOf(v.text);
+      const color = col[st] || col.muted;
+      g.strokeStyle = color;
+      g.lineWidth = st === 'muted' ? 2 : 3;
+      g.setLineDash(st === 'muted' ? [6, 5] : []);
+      g.beginPath();
+      pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y));
+      g.closePath();
+      g.stroke();
+      g.setLineDash([]);
+      const label = tag ? `${v.text} · ${tag}` : v.text;
+      const minY = Math.min(...pts.map(p => p.y)), minX = Math.min(...pts.map(p => p.x));
+      const tw = g.measureText(label).width + 12;
+      const lx = Math.max(2, Math.min(cw - tw - 2, minX));
+      const ly = minY - 24 < 2 ? Math.max(...pts.map(p => p.y)) + 4 : minY - 24;
+      g.fillStyle = 'rgba(6, 9, 12, 0.78)';
+      g.fillRect(lx, ly, tw, 20);
+      g.fillStyle = color;
+      g.fillRect(lx, ly, 3, 20);
+      g.fillStyle = '#F2F5F8';
+      g.fillText(label, lx + 8, ly + 14.5);
+    }
+  }
+  window.addEventListener('resize', drawOverlay);
+
+  /* ---------- SQL ---------- */
+  function lookupNamesOk() {
+    return IDENT.test(state.lookupTable) && IDENT.test(state.lookupCodeCol) && IDENT.test(state.lookupIdCol);
+  }
+  function genProblem() {
+    if (!/^\d+$/.test(String(state.jobId))) return 'Enter the job number at the top of the page.';
+    if (!IDENT.test(state.itemTable) || !IDENT.test(state.barcodeView)) return 'Enter the items table and barcode view in Settings.';
+    if (!state.box) return 'Set the destination box first.';
+    if (state.boxMode === 'id' && !/^\d+$/.test(state.box)) return 'The box ID must be a number. Change the box, or switch box labels to “A box barcode” in Settings.';
+    if (state.boxMode === 'lookup' && !lookupNamesOk()) return 'Fix the box lookup names in Settings. Use only letters, numbers, dots and underscores.';
+    if (!state.items.length) return 'Add at least one item.';
+    return '';
+  }
+
+  function buildSql() {
+    const job = state.jobId, n = state.items.length, idMode = state.boxMode === 'id';
+    const codes = state.items.map(i => q(i.code));
+    const list = (indent, wrap) => codes.map((c, i) => indent + (wrap ? `(${c})` : c) + (i < codes.length - 1 ? ',' : '')).join('\n');
+    const T = state.lookupTable, C = state.lookupCodeCol, I = state.lookupIdCol;
+    const IT = state.itemTable, BV = state.barcodeView;
+    const boxLit = idMode ? state.box : q(state.box);
+    const target = idMode ? state.box : `(SELECT b.${I} FROM ${T} b WHERE b.${C} = ${boxLit})`;
+    let step = 1;
+    const L = [];
+    L.push(`-- Move ${plural(n, 'item')} into box ${state.box} (job ${job})`);
+    L.push(`-- Generated ${genStamp} with Box Camera Scanner`);
+    L.push(`-- Run the steps in order. Nothing is saved until you run COMMIT at the end.`);
+    L.push('');
+    if (!idMode) {
+      L.push(`-- Step ${step++}: check the box label. This should return exactly one row.`);
+      L.push(`SELECT b.${I}, b.${C}`);
+      L.push(`FROM ${T} b`);
+      L.push(`WHERE b.${C} = ${boxLit};`);
+      L.push('');
+    }
+    L.push(`-- Step ${step++}: preview each barcode and the box it's in now.`);
+    L.push(`-- A NULL itemid means the barcode isn't in job ${job}, so it won't move.`);
+    L.push(`SELECT s.barcode, vicb.itemid, i.BoxID AS current_box`);
+    L.push(`FROM (VALUES`);
+    L.push(list('    ', true));
+    L.push(`) AS s(barcode)`);
+    L.push(`LEFT JOIN ${BV} vicb`);
+    L.push(`    ON vicb.text = s.barcode AND vicb.jobid = ${job}`);
+    L.push(`LEFT JOIN ${IT} i ON i.ItemID = vicb.itemid`);
+    L.push(`ORDER BY CASE WHEN vicb.itemid IS NULL THEN 0 ELSE 1 END, s.barcode;`);
+    L.push('');
+    L.push(`-- Step ${step++}: move the items. Expect ${plural(n, 'row')} updated (one per barcode).`);
+    L.push(`BEGIN TRANSACTION;`);
+    L.push('');
+    L.push(`UPDATE ${IT}`);
+    L.push(`SET BoxID = ${target}`);
+    L.push(`WHERE ItemID IN (`);
+    L.push(`    SELECT vicb.itemid`);
+    L.push(`    FROM ${BV} vicb`);
+    L.push(`    WHERE vicb.jobid = ${job}`);
+    L.push(`      AND vicb.text IN (`);
+    L.push(list('        ', false));
+    L.push(`      )`);
+    if (idMode) {
+      L.push(`);`);
+    } else {
+      L.push(`)`);
+      L.push(`AND (SELECT COUNT(*) FROM ${T} b WHERE b.${C} = ${boxLit}) = 1;`);
+    }
+    L.push('');
+    L.push(`-- Step ${step++}: check. Every row should show the new box${idMode ? ` (${state.box})` : ''}.`);
+    L.push(`SELECT i.ItemID, vicb.text, i.BoxID`);
+    L.push(`FROM ${IT} i`);
+    L.push(`JOIN ${BV} vicb ON i.ItemID = vicb.itemid`);
+    L.push(`WHERE vicb.jobid = ${job}`);
+    L.push(`  AND vicb.text IN (`);
+    L.push(list('    ', false));
+    L.push(`  );`);
+    L.push('');
+    L.push(`-- Step ${step++}: if the check looks right, run COMMIT. If not, run ROLLBACK.`);
+    L.push(`-- COMMIT;`);
+    L.push(`-- ROLLBACK;`);
+    return L.join('\n');
+  }
+
+  const TOKENS = /('(?:[^']|'')*')|\b(SELECT|FROM|WHERE|AND|IN|LEFT|JOIN|ON|UPDATE|SET|BEGIN|TRANSACTION|COMMIT|ROLLBACK|VALUES|AS|NOT|EXISTS|ORDER|BY|CASE|WHEN|THEN|ELSE|END|IS|NULL|COUNT)\b/g;
+  function highlight(sql) {
+    return sql.split('\n').map(line => {
+      if (/^\s*--/.test(line)) return `<span class="tok-c">${esc(line)}</span>`;
+      let out = '', last = 0;
+      line.replace(TOKENS, (m, str, kw, off) => {
+        out += esc(line.slice(last, off));
+        out += str ? `<span class="tok-s">${esc(str)}</span>` : `<span class="tok-k">${m}</span>`;
+        last = off + m.length;
+        return m;
+      });
+      return out + esc(line.slice(last));
+    }).join('\n');
+  }
+
+  function selectNode(node) {
+    try {
+      const r = document.createRange(); r.selectNodeContents(node);
+      const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    } catch (e) {}
+  }
+  function copySql() {
+    const sql = lastSql;
+    const done = () => { copiedSql = sql; setMsg(el.copyMsg, 'ok', 'Copied. Paste it into your SQL editor.'); render(); };
+    const fail = () => { selectNode(el.sqlCode); setMsg(el.copyMsg, 'warn', 'Copying was blocked. The SQL is selected, so press ⌘C or Ctrl+C.'); };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(sql).then(done, fail);
+      else fail();
+    } catch (e) { fail(); }
+  }
+
+  /* ---------- render ---------- */
+  const chipEls = new Map();
+  function renderCands() {
+    if (state.box) { el.cands.replaceChildren(); chipEls.clear(); return; }
+    const now = Date.now();
+    const live = [...cands.entries()].filter(([, c]) => view === 'photo' || now - c.last < 3000);
+    const keep = new Set(live.map(([k]) => k));
+    for (const [k, b] of chipEls) if (!keep.has(k)) { b.remove(); chipEls.delete(k); }
+    for (const [k, c] of live) {
+      if (chipEls.has(k)) continue;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip';
+      b.dataset.eligible = String(boxEligible(c.text));
+      b.innerHTML = `${esc(c.text)} <small>use as box</small>`;
+      b.addEventListener('click', () => setBox(c.text, 'tap'));
+      el.cands.appendChild(b);
+      chipEls.set(k, b);
+    }
+  }
+
+  function renderLiveStatus() {
+    renderCands();
+    const parts = [];
+    if (engine) parts.push(engine.label);
+    if (view !== 'off') parts.push(`${plural(lastInView, 'barcode')} in view`);
+    if (lastIgnored) parts.push(`${lastIgnored} ignored`);
+    el.camStatus.textContent = parts.join(' · ');
+    el.modeText.textContent = view === 'photo'
+      ? (state.box ? 'Photo · items' : 'Photo · box label')
+      : (state.box ? 'Step 2 · adding items' : 'Step 1 · find the box label');
+  }
+
+  function renderList(newCodes) {
+    const items = state.items;
+    const fresh = new Set((newCodes || []).map(keyOf));
+    const frag = document.createDocumentFragment();
+    for (let k = items.length - 1; k >= 0; k--) {
+      const it = items[k];
+      const li = document.createElement('li');
+      if (fresh.has(keyOf(it.code))) li.className = 'new';
+      const src = it.src === 'photo' ? 'photo' : it.src === 'typed' ? 'typed' : 'camera';
+      li.innerHTML = `<span class="idx">${k + 1}</span><span class="code">${esc(it.code)}</span>` +
+        `<span class="src">${src} ${esc(timeOf(it.t))}</span>` +
+        `<button type="button" class="rm" data-i="${k}" aria-label="Remove ${esc(it.code)}">×</button>`;
+      frag.appendChild(li);
+    }
+    el.list.replaceChildren(frag);
+    el.listEmpty.hidden = items.length > 0;
+    if (newCodes && newCodes.length) el.list.scrollTop = 0;
+  }
+
+  function render(newCodes) {
+    const hasBox = !!state.box;
+    const n = state.items.length;
+
+    el.boxEmpty.hidden = hasBox;
+    el.boxSet.hidden = !hasBox;
+    el.stepBox.dataset.state = hasBox ? 'done' : 'active';
+    if (hasBox) {
+      el.boxValue.textContent = state.box;
+      el.boxSub.textContent = state.boxMode === 'id' ? 'Box ID' : `Box barcode. The SQL looks up its ID in ${state.lookupTable}.`;
+    }
+    el.boxHint.textContent = state.boxMode === 'id'
+      ? 'Point the camera at the box label. If only one box number is in view it’s picked automatically. Otherwise, tap the right one.'
+      : 'Point the camera at the box label. If it’s the only barcode in view it’s picked automatically. Otherwise, tap the right one.';
+
+    el.stepItems.dataset.state = hasBox ? 'active' : 'locked';
+    el.itemsHint.textContent = hasBox
+      ? (filterRe ? `Move the camera slowly across the labels. Only barcodes matching ${state.pattern.trim()} are kept.` : 'Move the camera slowly across the labels. Each barcode is added once.')
+      : 'Set the box first. Then point the camera into the box.';
+    el.count.textContent = n;
+    el.itemInput.disabled = !hasBox;
+    el.itemAdd.disabled = !hasBox;
+    el.undoBtn.disabled = n === 0;
+    el.clearBtn.disabled = n === 0;
+    renderList(newCodes);
+    renderCands();
+
+    el.jobInput.setAttribute('aria-invalid', /^\d+$/.test(String(state.jobId)) ? 'false' : 'true');
+    const problem = genProblem();
+    if (problem) generated = false;
+    el.genBtn.disabled = !!problem;
+    el.genBtn.textContent = generated ? 'Copy SQL again' : 'Generate SQL';
+    el.nextBtn.hidden = !generated;
+
+    if (generated) {
+      const sql = buildSql();
+      if (sql !== lastSql) {
+        lastSql = sql;
+        el.sqlCode.innerHTML = highlight(sql);
+        if (copiedSql !== null && copiedSql !== sql) setMsg(el.copyMsg, 'warn', 'The list changed since you copied. Copy the SQL again.');
+      }
+      el.sqlPanel.hidden = false;
+      const fresh = copiedSql === sql;
+      el.copyBtn.textContent = fresh ? 'Copied' : 'Copy SQL';
+      el.stepSql.dataset.state = fresh ? 'done' : 'active';
+      el.genHint.innerHTML = fresh
+        ? `Copied: ${plural(n, 'item')} into box <span class="code-inline">${esc(state.box)}</span>. New reads update the SQL.`
+        : 'The SQL updates as items are added. Copy it again after any change.';
+    } else {
+      el.sqlPanel.hidden = true;
+      el.stepSql.dataset.state = problem ? 'locked' : 'active';
+      el.genHint.innerHTML = problem ? esc(problem) : `Ready to move ${plural(n, 'item')} into box <span class="code-inline">${esc(state.box)}</span>.`;
+    }
+
+    el.stopBtn.hidden = !running;
+    el.liveBtn.hidden = view !== 'photo';
+    el.liveBtn.textContent = running ? 'Back to live view' : 'Close photo';
+    renderLiveStatus();
+    drawOverlay();
+  }
+
+  /* ---------- settings ---------- */
+  function syncSettings() {
+    el.dbItems.value = state.itemTable;
+    el.dbView.value = state.barcodeView;
+    el.dbItems.setAttribute('aria-invalid', IDENT.test(state.itemTable) ? 'false' : 'true');
+    el.dbView.setAttribute('aria-invalid', IDENT.test(state.barcodeView) ? 'false' : 'true');
+    el.modeId.checked = state.boxMode === 'id';
+    el.modeLookup.checked = state.boxMode === 'lookup';
+    el.lookupFields.hidden = state.boxMode !== 'lookup';
+    el.lkTable.value = state.lookupTable;
+    el.lkCode.value = state.lookupCodeCol;
+    el.lkId.value = state.lookupIdCol;
+    for (const [inp, k] of [[el.lkTable, 'lookupTable'], [el.lkCode, 'lookupCodeCol'], [el.lkId, 'lookupIdCol']]) {
+      inp.setAttribute('aria-invalid', IDENT.test(state[k]) ? 'false' : 'true');
+    }
+    el.patternInput.value = state.pattern;
+    el.readsSelect.value = String(state.confirmReads);
+    el.engineSelect.value = state.engine;
+    el.sound.checked = !!state.sound;
+  }
+  function setMode(m) { state.boxMode = m; save(); syncSettings(); render(); }
+  function openSettings(open) {
+    el.settings.hidden = !open;
+    el.settingsBtn.setAttribute('aria-expanded', String(open));
+  }
+
+  /* ---------- inline confirm ---------- */
+  function disarm(btn) {
+    if (btn.dataset.armed === '1') {
+      btn.dataset.armed = '';
+      btn.textContent = btn._label;
+      btn.classList.remove('btn-confirm');
+      clearTimeout(btn._t);
+    }
+  }
+  function confirmable(btn, needsConfirm, confirmLabel, action) {
+    btn.addEventListener('click', () => {
+      if (!needsConfirm() || btn.dataset.armed === '1') { disarm(btn); action(); return; }
+      btn.dataset.armed = '1';
+      btn._label = btn.textContent;
+      btn.textContent = confirmLabel();
+      btn.classList.add('btn-confirm');
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => disarm(btn), 4000);
+    });
+  }
+
+  /* ---------- events ---------- */
+  el.startBtn.addEventListener('click', startCamera);
+  el.stopBtn.addEventListener('click', stopCamera);
+  el.liveBtn.addEventListener('click', () => { showView(running ? 'live' : 'off'); setMsg(el.camMsg, '', ''); render(); });
+  el.photoBtn.addEventListener('click', () => el.photoInput.click());
+  el.vpPhotoBtn.addEventListener('click', () => el.photoInput.click());
+  el.chooseBtn.addEventListener('click', () => el.chooseInput.click());
+  el.photoInput.addEventListener('change', async () => { const f = [...el.photoInput.files]; el.photoInput.value = ''; await processPhotos(f); render(); });
+  el.chooseInput.addEventListener('change', async () => { const f = [...el.chooseInput.files]; el.chooseInput.value = ''; await processPhotos(f); render(); });
+  el.camSelect.addEventListener('change', () => {
+    state.cameraId = el.camSelect.value; save();
+    if (running) { stopStream(); startCamera(); }
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && running) drawOverlay(); });
+
+  el.boxForm.addEventListener('submit', e => { e.preventDefault(); const v = el.boxInput.value; el.boxInput.value = ''; setBox(v, 'typed'); });
+  el.boxChange.addEventListener('click', () => {
+    state.box = null; save();
+    cands.clear(); pending.clear();
+    setMsg(el.boxMsg, '', state.items.length ? esc(`Point the camera at the new box label. The ${plural(state.items.length, 'item')} on the list stay.`) : '');
+    render();
+  });
+
+  el.itemForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const v = el.itemInput.value.trim();
+    el.itemInput.value = '';
+    if (!v) return;
+    if (isBox(v)) { beep('warn'); setMsg(el.itemMsg, 'warn', 'That’s the box label. Type an item barcode.'); return; }
+    const idx = listIndex(v);
+    if (idx >= 0) { beep('warn'); setMsg(el.itemMsg, 'warn', `<span class="code-inline">${esc(v)}</span> is already on the list (#${idx + 1}).`); return; }
+    state.items.push({ code: v, t: Date.now(), src: 'typed' });
+    save(); beep('ok');
+    setMsg(el.itemMsg, 'ok', `Added <span class="code-inline">${esc(v)}</span>`);
+    render([v]);
+  });
+
+  el.undoBtn.addEventListener('click', () => {
+    const it = state.items.pop();
+    if (!it) return;
+    save();
+    setMsg(el.itemMsg, '', `Removed <span class="code-inline">${esc(it.code)}</span>`);
+    render();
+  });
+  el.list.addEventListener('click', e => {
+    const b = e.target.closest('.rm');
+    if (!b) return;
+    const [it] = state.items.splice(Number(b.dataset.i), 1);
+    if (!it) return;
+    save();
+    setMsg(el.itemMsg, '', `Removed <span class="code-inline">${esc(it.code)}</span>. If the camera still sees it, it will be added again.`);
+    render();
+  });
+
+  confirmable(el.clearBtn,
+    () => state.items.length > 0,
+    () => `Clear ${plural(state.items.length, 'item')}?`,
+    () => { state.items = []; pending.clear(); save(); setMsg(el.itemMsg, '', 'Cleared the list.'); render(); });
+
+  confirmable(el.nextBtn,
+    () => state.items.length > 0 && copiedSql !== lastSql,
+    () => 'SQL not copied. Start anyway?',
+    () => {
+      state.box = null; state.items = [];
+      cands.clear(); pending.clear();
+      generated = false; copiedSql = null; lastSql = '';
+      save();
+      setMsg(el.boxMsg, '', ''); setMsg(el.itemMsg, '', ''); setMsg(el.copyMsg, '', ''); setMsg(el.camMsg, '', '');
+      if (view === 'photo') showView(running ? 'live' : 'off');
+      render();
+      window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+
+  el.genBtn.addEventListener('click', () => {
+    if (genProblem()) return;
+    if (!generated) { generated = true; genStamp = stamp(new Date()); }
+    render();
+    copySql();
+    el.sqlPanel.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  });
+  el.copyBtn.addEventListener('click', copySql);
+
+  el.jobInput.addEventListener('input', () => { state.jobId = el.jobInput.value.trim(); save(); render(); });
+  el.settingsBtn.addEventListener('click', () => openSettings(el.settings.hidden));
+  el.settingsClose.addEventListener('click', () => openSettings(false));
+  el.modeId.addEventListener('change', () => setMode('id'));
+  el.modeLookup.addEventListener('change', () => setMode('lookup'));
+  for (const [inp, k] of [[el.lkTable, 'lookupTable'], [el.lkCode, 'lookupCodeCol'], [el.lkId, 'lookupIdCol'], [el.dbItems, 'itemTable'], [el.dbView, 'barcodeView']]) {
+    inp.addEventListener('input', () => {
+      state[k] = inp.value.trim();
+      inp.setAttribute('aria-invalid', IDENT.test(state[k]) ? 'false' : 'true');
+      save(); render();
+    });
+  }
+  el.patternInput.addEventListener('input', () => { state.pattern = el.patternInput.value; filterRe = patternRe(); save(); render(); });
+  el.readsSelect.addEventListener('change', () => { state.confirmReads = Number(el.readsSelect.value) || 2; save(); });
+  el.engineSelect.addEventListener('change', () => { state.engine = el.engineSelect.value; engine = null; save(); getEngine().then(renderLiveStatus).catch(() => {}); });
+  el.sound.addEventListener('change', () => { state.sound = el.sound.checked; save(); });
+
+  /* ---------- start ---------- */
+  el.jobInput.value = state.jobId;
+  syncSettings();
+  if (!liveAllowed) {
+    el.vpTitle.textContent = 'Use photos here';
+    el.vpText.textContent = 'This page can’t open a live camera where it’s running. Take a photo of the box label, then photos of the items. Every barcode in each photo is read.';
+    el.startBtn.hidden = true;
+  }
+  render();
+  if (state.items.length) setMsg(el.itemMsg, '', esc(`Picked up where you left off: ${plural(state.items.length, 'item')} on the list.`));
+  if (!state.itemTable || !state.barcodeView) openSettings(true);
+})();
+</script>
+
+</html>
