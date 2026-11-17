@@ -397,23 +397,18 @@ body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
       <fieldset>
         <legend class="label-caps">Database</legend>
         <div class="lookup">
-          <label for="db-items">Items table <input id="db-items" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="schema.table"></label>
+          <label for="db-schema">Schema <input id="db-schema" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="schema"></label>
           <label for="db-view">Barcode view <input id="db-view" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="schema.view"></label>
-          <p class="hint">The SQL sets BoxID in the items table, finding each item through the barcode view&rsquo;s itemid, text and jobid columns.</p>
+          <label for="db-user">Your username <input id="db-user" autocomplete="username" spellcheck="false" autocapitalize="off" placeholder="first.last"></label>
+          <p class="hint">Your username goes into UpdatedBy on every item you move, so each move shows who made it.</p>
         </div>
       </fieldset>
       <fieldset>
         <legend class="label-caps">Box labels contain</legend>
         <label class="radio"><input type="radio" name="boxmode" value="id" id="mode-id">
-          <span>The box ID<small>A number like 16092. It goes straight into the item&rsquo;s BoxID column.</small></span></label>
+          <span>The box ID<small>A number like 16092.</small></span></label>
         <label class="radio"><input type="radio" name="boxmode" value="lookup" id="mode-lookup">
-          <span>A box barcode<small>The SQL looks up the box ID from the barcode.</small></span></label>
-        <div class="lookup" id="lookup-fields" hidden>
-          <label for="lk-table">Box table <input id="lk-table" autocomplete="off" spellcheck="false"></label>
-          <label for="lk-code">Barcode column <input id="lk-code" autocomplete="off" spellcheck="false"></label>
-          <label for="lk-id">Box ID column <input id="lk-id" autocomplete="off" spellcheck="false"></label>
-          <p class="hint warn-text">These names are a guess. Check them against your database before you run the SQL.</p>
-        </div>
+          <span>A customer barcode<small>The SQL finds the box that carries this label.</small></span></label>
       </fieldset>
       <fieldset>
         <legend class="label-caps">Reading</legend>
@@ -573,11 +568,10 @@ body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
 
   /* ---------- state ---------- */
   const KEY = 'box-camera-scanner.v1';
-  const SITE_DEFAULTS = { jobId: '', itemTable: '', barcodeView: '', lookupTable: '' };
+  const SITE_DEFAULTS = { jobId: '', schema: '', barcodeView: '' };
   const DEFAULTS = {
     jobId: SITE_DEFAULTS.jobId, boxMode: 'id',
-    itemTable: SITE_DEFAULTS.itemTable, barcodeView: SITE_DEFAULTS.barcodeView,
-    lookupTable: SITE_DEFAULTS.lookupTable, lookupCodeCol: 'Barcode', lookupIdCol: 'BoxID',
+    schema: SITE_DEFAULTS.schema, barcodeView: SITE_DEFAULTS.barcodeView, username: '',
     pattern: '', confirmReads: 2, engine: 'auto', cameraId: '',
     sound: true, box: null, items: []
   };
@@ -610,7 +604,7 @@ body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
   let generated = false, genStamp = '', lastSql = '', copiedSql = null;
 
   const el = {};
-  ['job-input', 'settings-btn', 'settings', 'settings-close', 'db-items', 'db-view', 'mode-id', 'mode-lookup', 'lookup-fields', 'lk-table', 'lk-code', 'lk-id',
+  ['job-input', 'settings-btn', 'settings', 'settings-close', 'db-schema', 'db-view', 'db-user', 'mode-id', 'mode-lookup',
    'pattern-input', 'reads-select', 'engine-select', 'sound',
    'viewport', 'video', 'photo', 'overlay', 'reticle', 'mode-pill', 'mode-text', 'vp-empty', 'vp-title', 'vp-text', 'start-btn', 'vp-photo-btn', 'vp-busy',
    'cam-select-wrap', 'cam-select', 'stop-btn', 'live-btn', 'photo-btn', 'choose-btn', 'photo-input', 'choose-input', 'cam-msg', 'cam-status',
@@ -1548,86 +1542,125 @@ body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
   window.addEventListener('resize', drawOverlay);
 
   /* ---------- SQL ---------- */
-  function lookupNamesOk() {
-    return IDENT.test(state.lookupTable) && IDENT.test(state.lookupCodeCol) && IDENT.test(state.lookupIdCol);
-  }
+  const NAME_RULES = { schema: /^[A-Za-z_][A-Za-z0-9_]*$/, barcodeView: IDENT, username: /^[A-Za-z0-9._@\\-]{1,64}$/ };
+  const validName = k => NAME_RULES[k].test(String(state[k] || ''));
   function genProblem() {
     if (!/^\d+$/.test(String(state.jobId))) return 'Enter the job number at the top of the page.';
-    if (!IDENT.test(state.itemTable) || !IDENT.test(state.barcodeView)) return 'Enter the items table and barcode view in Settings.';
+    if (!validName('schema') || !validName('barcodeView')) return 'Enter the schema and barcode view in Settings.';
+    if (!validName('username')) return 'Enter your username in Settings. It goes into UpdatedBy so each move shows who made it.';
     if (!state.box) return 'Set the destination box first.';
     if (state.boxMode === 'id' && !/^\d+$/.test(state.box)) return 'The box ID must be a number. Change the box, or switch box labels to “A box barcode” in Settings.';
-    if (state.boxMode === 'lookup' && !lookupNamesOk()) return 'Fix the box lookup names in Settings. Use only letters, numbers, dots and underscores.';
     if (!state.items.length) return 'Add at least one item.';
     return '';
   }
 
-  function buildSql() {
-    const job = state.jobId, n = state.items.length, idMode = state.boxMode === 'id';
-    const codes = state.items.map(i => q(i.code));
-    const list = (indent, wrap) => codes.map((c, i) => indent + (wrap ? `(${c})` : c) + (i < codes.length - 1 ? ',' : '')).join('\n');
-    const T = state.lookupTable, C = state.lookupCodeCol, I = state.lookupIdCol;
-    const IT = state.itemTable, BV = state.barcodeView;
-    const boxLit = idMode ? state.box : q(state.box);
-    const target = idMode ? state.box : `(SELECT b.${I} FROM ${T} b WHERE b.${C} = ${boxLit})`;
-    let step = 1;
+  // Builds the move script. o: { job, box, idMode, codes, user, S (schema), BV (barcode view), stamp, app }
+  // Rules it follows (from the database's own triggers):
+  //  - Only BoxID, UpdateDate and UpdatedBy are set. Setting LocationID in the same UPDATE makes the
+  //    item-moved trigger log a location move and clear BoxID again.
+  //  - The trigger writes the ItemTrail history row itself, one per item, so nothing is inserted here.
+  function buildMoveSql(o) {
+    const n = o.codes.length;
+    const lit = o.codes.map(q);
+    const list = (indent, wrap) => lit.map((c, i) => indent + (wrap ? `(${c})` : c) + (i < lit.length - 1 ? ',' : '')).join('\n');
+    const boxLit = o.idMode ? o.box : q(o.box);
+    const boxMatch = o.idMode ? `b.BoxID = ${o.box}` : `(b.CustomerBarcode = ${boxLit} OR b.CustomerBarcodeAlt = ${boxLit})`;
+    const boxExpr = o.idMode ? o.box : `(SELECT MIN(b.BoxID) FROM ${o.S}.Box b WHERE ${boxMatch})`;
+    const barcodes = `(SELECT DISTINCT itemid, [text] FROM ${o.BV} WHERE JobID = ${o.job})`;
     const L = [];
-    L.push(`-- Move ${plural(n, 'item')} into box ${state.box} (job ${job})`);
-    L.push(`-- Generated ${genStamp} with Box Camera Scanner`);
-    L.push(`-- Run the steps in order. Nothing is saved until you run COMMIT at the end.`);
+    L.push(`-- Move ${plural(n, 'item')} into box ${o.box} (job ${o.job})`);
+    L.push(`-- Generated ${o.stamp} with ${o.app}`);
+    L.push(`-- Run top to bottom. Nothing is saved until you run COMMIT at the end.`);
     L.push('');
-    if (!idMode) {
-      L.push(`-- Step ${step++}: check the box label. This should return exactly one row.`);
-      L.push(`SELECT b.${I}, b.${C}`);
-      L.push(`FROM ${T} b`);
-      L.push(`WHERE b.${C} = ${boxLit};`);
-      L.push('');
-    }
-    L.push(`-- Step ${step++}: preview each barcode and the box it's in now.`);
-    L.push(`-- A NULL itemid means the barcode isn't in job ${job}, so it won't move.`);
-    L.push(`SELECT s.barcode, vicb.itemid, i.BoxID AS current_box`);
+    L.push(`-- Step 1: check the box. Expect ${o.idMode ? 'one row' : 'exactly one row'} saying OK.`);
+    L.push(`SELECT b.BoxID, b.Enabled, b.CompanyID AS box_customer, j.CompanyID AS job_customer,`);
+    L.push(`       CASE WHEN b.Enabled = 0 THEN 'BOX IS DISABLED'`);
+    L.push(`            WHEN b.CompanyID <> j.CompanyID THEN 'BOX BELONGS TO ANOTHER CUSTOMER'`);
+    L.push(`            ELSE 'OK' END AS box_check`);
+    L.push(`FROM ${o.S}.Box b`);
+    L.push(`JOIN ${o.S}.Job j ON j.JobID = ${o.job}`);
+    L.push(`WHERE ${boxMatch};`);
+    L.push(o.idMode
+      ? `-- No rows means the box or the job doesn't exist, and nothing will move.`
+      : `-- No rows means no box has this label. Several rows means the label is on more than one box. Either way, nothing will move.`);
+    L.push('');
+    L.push(`-- Step 2: preview every scanned barcode. Problems are listed first. Only rows saying "will move" change.`);
+    L.push(`SELECT p.*`);
+    L.push(`FROM (`);
+    L.push(`    SELECT s.barcode, i.ItemID, i.BoxID AS current_box, i.Status,`);
+    L.push(`           CASE WHEN i.ItemID IS NULL THEN 'skip: not in job ${o.job}'`);
+    L.push(`                WHEN COUNT(*) OVER (PARTITION BY s.barcode) > 1 THEN 'skip: barcode is on several items'`);
+    L.push(`                WHEN i.Enabled = 0 THEN 'skip: item is disabled'`);
+    L.push(`                WHEN i.Destroyed = 1 THEN 'skip: item is destroyed'`);
+    L.push(`                WHEN i.WithCompany = 1 THEN 'skip: item is with the customer'`);
+    L.push(`                WHEN i.BoxID = ${boxExpr} THEN 'already in this box'`);
+    L.push(`                ELSE 'will move' END AS outcome`);
+    L.push(`    FROM (VALUES`);
+    L.push(list('        ', true));
+    L.push(`    ) AS s(barcode)`);
+    L.push(`    LEFT JOIN ${barcodes} v ON v.[text] = s.barcode`);
+    L.push(`    LEFT JOIN ${o.S}.Item i ON i.ItemID = v.itemid`);
+    L.push(`) p`);
+    L.push(`ORDER BY CASE p.outcome WHEN 'will move' THEN 2 WHEN 'already in this box' THEN 1 ELSE 0 END, p.barcode;`);
+    L.push('');
+    L.push(`-- Step 3: move the items marked "will move". The rows-updated count should match.`);
+    L.push(`-- Don't add LocationID to this UPDATE: the item-moved trigger would take the items back out of the box.`);
+    L.push(`-- UpdateDate uses the server's local time (GETDATE()).`);
+    L.push(`BEGIN TRANSACTION;`);
+    L.push('');
+    L.push(`WITH scanned AS (`);
+    L.push(`    SELECT DISTINCT itemid, [text]`);
+    L.push(`    FROM ${o.BV}`);
+    L.push(`    WHERE JobID = ${o.job}`);
+    L.push(`      AND [text] IN (`);
+    L.push(list('        ', false));
+    L.push(`      )`);
+    L.push(`), unique_hits AS (`);
+    L.push(`    SELECT [text], MIN(itemid) AS itemid`);
+    L.push(`    FROM scanned`);
+    L.push(`    GROUP BY [text]`);
+    L.push(`    HAVING COUNT(*) = 1`);
+    L.push(`)`);
+    L.push(`UPDATE i`);
+    L.push(`SET i.BoxID = ${boxExpr},`);
+    L.push(`    i.UpdateDate = GETDATE(),`);
+    L.push(`    i.UpdatedBy = ${q(o.user)}`);
+    L.push(`FROM ${o.S}.Item i`);
+    L.push(`WHERE i.ItemID IN (SELECT itemid FROM unique_hits)`);
+    L.push(`  AND i.JobID = ${o.job}`);
+    L.push(`  AND i.Enabled = 1`);
+    L.push(`  AND ISNULL(i.Destroyed, 0) = 0`);
+    L.push(`  AND ISNULL(i.WithCompany, 0) = 0`);
+    L.push(`  AND (i.BoxID IS NULL OR i.BoxID <> ${boxExpr})`);
+    L.push(`  AND EXISTS (SELECT 1 FROM ${o.S}.Box b JOIN ${o.S}.Job j ON j.JobID = ${o.job}`);
+    L.push(`              WHERE ${boxMatch} AND b.Enabled = 1 AND b.CompanyID = j.CompanyID)` + (o.idMode ? ';' : ''));
+    if (!o.idMode) L.push(`  AND (SELECT COUNT(*) FROM ${o.S}.Box b WHERE ${boxMatch}) = 1;`);
+    L.push('');
+    L.push(`-- Step 4: check. Items that moved say "in box" and show when the history row was logged (UTC).`);
+    L.push(`SELECT s.barcode, i.ItemID, i.BoxID, i.UpdatedBy, i.UpdateDate, t.EventTime AS history_logged_utc,`);
+    L.push(`       CASE WHEN i.BoxID = ${boxExpr} THEN 'in box' ELSE 'not in box' END AS result`);
     L.push(`FROM (VALUES`);
     L.push(list('    ', true));
     L.push(`) AS s(barcode)`);
-    L.push(`LEFT JOIN ${BV} vicb`);
-    L.push(`    ON vicb.text = s.barcode AND vicb.jobid = ${job}`);
-    L.push(`LEFT JOIN ${IT} i ON i.ItemID = vicb.itemid`);
-    L.push(`ORDER BY CASE WHEN vicb.itemid IS NULL THEN 0 ELSE 1 END, s.barcode;`);
+    L.push(`LEFT JOIN ${barcodes} v ON v.[text] = s.barcode`);
+    L.push(`LEFT JOIN ${o.S}.Item i ON i.ItemID = v.itemid`);
+    L.push(`OUTER APPLY (SELECT TOP 1 tr.EventTime FROM ${o.S}.ItemTrail tr`);
+    L.push(`             WHERE tr.ItemID = i.ItemID AND tr.DestinationBoxID = ${boxExpr}`);
+    L.push(`             ORDER BY tr.EventID DESC) t`);
+    L.push(`ORDER BY CASE WHEN i.BoxID = ${boxExpr} THEN 1 ELSE 0 END, s.barcode;`);
     L.push('');
-    L.push(`-- Step ${step++}: move the items. Expect ${plural(n, 'row')} updated (one per barcode).`);
-    L.push(`BEGIN TRANSACTION;`);
-    L.push('');
-    L.push(`UPDATE ${IT}`);
-    L.push(`SET BoxID = ${target}`);
-    L.push(`WHERE ItemID IN (`);
-    L.push(`    SELECT vicb.itemid`);
-    L.push(`    FROM ${BV} vicb`);
-    L.push(`    WHERE vicb.jobid = ${job}`);
-    L.push(`      AND vicb.text IN (`);
-    L.push(list('        ', false));
-    L.push(`      )`);
-    if (idMode) {
-      L.push(`);`);
-    } else {
-      L.push(`)`);
-      L.push(`AND (SELECT COUNT(*) FROM ${T} b WHERE b.${C} = ${boxLit}) = 1;`);
-    }
-    L.push('');
-    L.push(`-- Step ${step++}: check. Every row should show the new box${idMode ? ` (${state.box})` : ''}.`);
-    L.push(`SELECT i.ItemID, vicb.text, i.BoxID`);
-    L.push(`FROM ${IT} i`);
-    L.push(`JOIN ${BV} vicb ON i.ItemID = vicb.itemid`);
-    L.push(`WHERE vicb.jobid = ${job}`);
-    L.push(`  AND vicb.text IN (`);
-    L.push(list('    ', false));
-    L.push(`  );`);
-    L.push('');
-    L.push(`-- Step ${step++}: if the check looks right, run COMMIT. If not, run ROLLBACK.`);
+    L.push(`-- Step 5: if the check looks right, run COMMIT. If not, run ROLLBACK.`);
     L.push(`-- COMMIT;`);
     L.push(`-- ROLLBACK;`);
     return L.join('\n');
   }
 
-  const TOKENS = /('(?:[^']|'')*')|\b(SELECT|FROM|WHERE|AND|IN|LEFT|JOIN|ON|UPDATE|SET|BEGIN|TRANSACTION|COMMIT|ROLLBACK|VALUES|AS|NOT|EXISTS|ORDER|BY|CASE|WHEN|THEN|ELSE|END|IS|NULL|COUNT)\b/g;
+  function buildSql() {
+    return buildMoveSql({ job: state.jobId, box: state.box, idMode: state.boxMode === 'id', codes: state.items.map(i => i.code),
+      user: state.username, S: state.schema, BV: state.barcodeView, stamp: genStamp, app: 'Box Camera Scanner' });
+  }
+
+  const TOKENS = /('(?:[^']|'')*')|\b(SELECT|FROM|WHERE|AND|IN|LEFT|JOIN|ON|UPDATE|SET|BEGIN|TRANSACTION|COMMIT|ROLLBACK|VALUES|AS|NOT|EXISTS|ORDER|BY|CASE|WHEN|THEN|ELSE|END|IS|NULL|COUNT|OR|WITH|DISTINCT|GROUP|HAVING|MIN|OVER|PARTITION|OUTER|APPLY|TOP|ISNULL|GETDATE)\b/g;
   function highlight(sql) {
     return sql.split('\n').map(line => {
       if (/^\s*--/.test(line)) return `<span class="tok-c">${esc(line)}</span>`;
@@ -1719,7 +1752,7 @@ body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
     el.stepBox.dataset.state = hasBox ? 'done' : 'active';
     if (hasBox) {
       el.boxValue.textContent = state.box;
-      el.boxSub.textContent = state.boxMode === 'id' ? 'Box ID' : `Box barcode. The SQL looks up its ID in ${state.lookupTable}.`;
+      el.boxSub.textContent = state.boxMode === 'id' ? 'Box ID' : 'Customer barcode. The SQL finds the box that carries it.';
     }
     el.boxHint.textContent = state.boxMode === 'id'
       ? 'Point the camera at the box label. If only one box number is in view it’s picked automatically. Otherwise, tap the right one.'
@@ -1778,19 +1811,12 @@ body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
 
   /* ---------- settings ---------- */
   function syncSettings() {
-    el.dbItems.value = state.itemTable;
-    el.dbView.value = state.barcodeView;
-    el.dbItems.setAttribute('aria-invalid', IDENT.test(state.itemTable) ? 'false' : 'true');
-    el.dbView.setAttribute('aria-invalid', IDENT.test(state.barcodeView) ? 'false' : 'true');
+    for (const [inp, k] of [[el.dbSchema, 'schema'], [el.dbView, 'barcodeView'], [el.dbUser, 'username']]) {
+      inp.value = state[k] || '';
+      inp.setAttribute('aria-invalid', validName(k) ? 'false' : 'true');
+    }
     el.modeId.checked = state.boxMode === 'id';
     el.modeLookup.checked = state.boxMode === 'lookup';
-    el.lookupFields.hidden = state.boxMode !== 'lookup';
-    el.lkTable.value = state.lookupTable;
-    el.lkCode.value = state.lookupCodeCol;
-    el.lkId.value = state.lookupIdCol;
-    for (const [inp, k] of [[el.lkTable, 'lookupTable'], [el.lkCode, 'lookupCodeCol'], [el.lkId, 'lookupIdCol']]) {
-      inp.setAttribute('aria-invalid', IDENT.test(state[k]) ? 'false' : 'true');
-    }
     el.patternInput.value = state.pattern;
     el.readsSelect.value = String(state.confirmReads);
     el.engineSelect.value = state.engine;
@@ -1920,10 +1946,10 @@ body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
   el.settingsClose.addEventListener('click', () => openSettings(false));
   el.modeId.addEventListener('change', () => setMode('id'));
   el.modeLookup.addEventListener('change', () => setMode('lookup'));
-  for (const [inp, k] of [[el.lkTable, 'lookupTable'], [el.lkCode, 'lookupCodeCol'], [el.lkId, 'lookupIdCol'], [el.dbItems, 'itemTable'], [el.dbView, 'barcodeView']]) {
+  for (const [inp, k] of [[el.dbSchema, 'schema'], [el.dbView, 'barcodeView'], [el.dbUser, 'username']]) {
     inp.addEventListener('input', () => {
       state[k] = inp.value.trim();
-      inp.setAttribute('aria-invalid', IDENT.test(state[k]) ? 'false' : 'true');
+      inp.setAttribute('aria-invalid', validName(k) ? 'false' : 'true');
       save(); render();
     });
   }
@@ -1945,7 +1971,7 @@ body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
   }
   render();
   if (state.items.length) setMsg(el.itemMsg, '', esc(`Picked up where you left off: ${plural(state.items.length, 'item')} on the list.`));
-  if (!state.itemTable || !state.barcodeView) openSettings(true);
+  if (!validName('schema') || !validName('barcodeView') || !validName('username')) openSettings(true);
 })();
 </script>
 
