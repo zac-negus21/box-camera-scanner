@@ -41,6 +41,9 @@
   --ov-box: #FF4B40;
   --ov-cand: #6FB7FF;
   --ov-muted: #A7B0BA;
+  /* QR codes stay dark-on-white in both themes so every phone camera reads them. */
+  --qr-ink: #000000;
+  --qr-paper: #FFFFFF;
 
   --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
   --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -306,13 +309,68 @@ legend { padding: 0; margin-bottom: 8px; }
 .lookup input[aria-invalid="true"] { border-color: var(--warn); background: var(--warn-soft); }
 .warn-text { color: var(--warn); }
 
+/* Connect a phone (Mac side) */
+.share-body { padding: 16px; display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 20px 28px; align-items: start; }
+@media (max-width: 640px) { .share-body { grid-template-columns: minmax(0, 1fr); } .qr { max-width: 260px; } }
+.qr { width: 100%; aspect-ratio: 1; max-width: 100%; background: var(--qr-paper); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.qr svg { display: block; width: 100%; height: 100%; }
+.share-text { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.share-text p { margin: 0; }
+.link-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.share-url {
+  flex: 1 1 240px; min-width: 0; font-size: 13px; padding: 8px 10px; background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere;
+}
+.conn { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; }
+.conn::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); }
+.conn[data-state="wait"]::before { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.conn[data-state="live"]::before { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.conn[data-state="error"] { color: var(--warn); }
+.conn[data-state="error"]::before { background: var(--warn); }
+
+/* Phone camera page (phone side) */
+body[data-mode="sender"] .wrap > :not(#sender) { display: none !important; }
+.sender { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 640px; margin: 0 auto; }
+.sender-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+.sender-head h1 { font-size: 26px; }
+.sender .viewport { max-height: 62vh; }
+.snd-flash { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 6px var(--ov-ok); opacity: 0; transition: opacity .6s; }
+.snd-flash.on { opacity: 1; transition: none; }
+.snd-count { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 22px; line-height: 1.15; text-transform: uppercase; letter-spacing: .04em; }
+
 @media (prefers-reduced-motion: reduce) {
   .mode-pill .rec { animation: none; }
   .list li.new { animation: none; }
+  .snd-flash { transition: none; }
 }
 </style>
 
 <div class="wrap">
+  <section class="sender" id="sender" hidden aria-labelledby="sender-title">
+    <div class="sender-head">
+      <h1 id="sender-title">Phone camera</h1>
+      <p class="conn" id="snd-state" data-state="idle">Not connected</p>
+    </div>
+    <div class="viewport" id="snd-vp">
+      <video id="snd-video" playsinline muted autoplay></video>
+      <div class="reticle" aria-hidden="true"></div>
+      <div class="snd-flash" id="snd-flash" aria-hidden="true"></div>
+      <div class="vp-empty" id="snd-empty">
+        <p class="vp-title">Stream to the scanner</p>
+        <p class="vp-text">This phone sends its live camera picture to the scanner on your computer, and the computer reads the barcodes. Keep this page open while you scan.</p>
+        <button type="button" class="btn btn-primary" id="snd-start">Start streaming</button>
+      </div>
+    </div>
+    <p class="snd-count" id="snd-count">Waiting for the scanner</p>
+    <p class="msg" id="snd-msg" role="status" aria-live="polite"></p>
+    <div class="row-actions">
+      <button type="button" class="btn" id="snd-switch" hidden>Switch camera</button>
+      <button type="button" class="btn" id="snd-retry" hidden>Reconnect</button>
+      <button type="button" class="btn" id="snd-stop" hidden>Stop</button>
+    </div>
+    <p class="hint">Hold the phone 15&ndash;20&nbsp;cm from the labels and move slowly. The screen flashes green each time the scanner adds an item.</p>
+  </section>
+
   <header class="top">
     <div>
       <h1>Box Camera Scanner</h1>
@@ -379,6 +437,26 @@ legend { padding: 0; margin-bottom: 8px; }
     </div>
   </section>
 
+  <section class="panel" id="connect" hidden aria-labelledby="connect-title">
+    <div class="panel-head">
+      <h2 id="connect-title">Connect a phone</h2>
+      <button type="button" class="btn btn-small" id="connect-close">Close</button>
+    </div>
+    <div class="share-body">
+      <div class="qr" id="qr" role="img" aria-label="QR code that connects a phone camera to this scanner"></div>
+      <div class="share-text">
+        <p>Scan this with any phone&rsquo;s camera and open the link. On the phone, tap <b>Start streaming</b> and allow the camera. Its live picture appears here, and this page reads the barcodes and builds the SQL.</p>
+        <p class="conn" id="rcv-state" data-state="idle">Not started</p>
+        <div class="link-row">
+          <code class="share-url" id="connect-url"></code>
+          <button type="button" class="btn btn-small" id="connect-copy" disabled>Copy link</button>
+        </div>
+        <p class="msg" id="connect-msg" role="status" aria-live="polite"></p>
+        <p class="hint">Works best with the phone and this computer on the same Wi-Fi. The free PeerJS service introduces the two devices. The video then goes straight from the phone to here, or through a PeerJS relay if your networks block a direct link. The code only works while this page stays open.</p>
+      </div>
+    </div>
+  </section>
+
   <main class="grid">
     <section class="camera" aria-label="Camera">
       <div class="viewport" id="viewport">
@@ -392,6 +470,7 @@ legend { padding: 0; margin-bottom: 8px; }
           <p class="vp-text" id="vp-text">Start the camera and point it at the box label first, then into the box.</p>
           <div class="row-actions" style="justify-content:center">
             <button type="button" class="btn btn-primary" id="start-btn">Start camera</button>
+            <button type="button" class="btn" id="vp-connect-btn">Connect a phone</button>
             <button type="button" class="btn" id="vp-photo-btn">Take a photo</button>
           </div>
         </div>
@@ -404,6 +483,9 @@ legend { padding: 0; margin-bottom: 8px; }
           <select id="cam-select"></select>
         </div>
         <button type="button" class="btn" id="stop-btn" hidden>Stop camera</button>
+        <button type="button" class="btn" id="connect-btn" aria-expanded="false" aria-controls="connect">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="2" width="4.5" height="4.5"/><rect x="9.5" y="2" width="4.5" height="4.5"/><rect x="2" y="9.5" width="4.5" height="4.5"/><path d="M9.5 9.5h2v2M14 9.5v4.5H9.5"/></svg>
+          Connect a phone</button>
         <button type="button" class="btn" id="live-btn" hidden>Back to live view</button>
         <button type="button" class="btn" id="photo-btn">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h2.5l1.2-1.8h4.6L11.5 5H14v8H2z"/><circle cx="8" cy="9" r="2.4"/></svg>
@@ -499,6 +581,9 @@ legend { padding: 0; margin-bottom: 8px; }
     pattern: '', confirmReads: 2, engine: 'auto', cameraId: '',
     sound: true, box: null, items: []
   };
+  const HOSTED_URL = 'https://zac-negus21.github.io/box-camera-scanner/';
+  const QR_URL = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+  const PEER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js';
   const IDENT = /^[A-Za-z0-9_.\[\]]+$/;
   const NATIVE_FORMATS = ['code_128', 'code_39', 'code_93', 'codabar', 'itf', 'qr_code', 'data_matrix'];
   const ZX_FORMATS = ['CODE_128', 'CODE_39', 'CODE_93', 'CODABAR', 'ITF', 'QR_CODE', 'DATA_MATRIX'];
@@ -531,7 +616,9 @@ legend { padding: 0; margin-bottom: 8px; }
    'cam-select-wrap', 'cam-select', 'stop-btn', 'live-btn', 'photo-btn', 'choose-btn', 'photo-input', 'choose-input', 'cam-msg', 'cam-status',
    'step-box', 'box-empty', 'box-hint', 'cands', 'box-form', 'box-input', 'box-msg', 'box-set', 'box-value', 'box-sub', 'box-change',
    'step-items', 'count', 'items-hint', 'item-msg', 'list-empty', 'list', 'item-form', 'item-input', 'item-add', 'undo-btn', 'clear-btn',
-   'step-sql', 'gen-hint', 'gen-btn', 'next-btn', 'sql-panel', 'copy-btn', 'copy-msg', 'sql-code'
+   'step-sql', 'gen-hint', 'gen-btn', 'next-btn', 'sql-panel', 'copy-btn', 'copy-msg', 'sql-code',
+   'connect', 'connect-btn', 'vp-connect-btn', 'connect-close', 'qr', 'rcv-state', 'connect-url', 'connect-copy', 'connect-msg',
+   'sender', 'snd-state', 'snd-vp', 'snd-video', 'snd-flash', 'snd-empty', 'snd-start', 'snd-count', 'snd-msg', 'snd-switch', 'snd-retry', 'snd-stop'
   ].forEach(id => { el[id.replace(/-([a-z])/g, (m, c) => c.toUpperCase())] = $(id); });
 
   /* ---------- helpers ---------- */
@@ -589,20 +676,21 @@ legend { padding: 0; margin-bottom: 8px; }
   const boxEligible = text => state.boxMode !== 'id' || /^\d+$/.test(String(text).replace(/[,\s]/g, ''));
 
   /* ---------- barcode readers ---------- */
-  let zxPromise = null;
-  function loadZXing() {
-    if (window.ZXing) return Promise.resolve(window.ZXing);
-    if (!zxPromise) {
-      zxPromise = new Promise((resolve, reject) => {
+  const scriptLoads = new Map();
+  function loadScript(url, globalName) {
+    if (window[globalName]) return Promise.resolve(window[globalName]);
+    if (!scriptLoads.has(url)) {
+      scriptLoads.set(url, new Promise((resolve, reject) => {
         const s = document.createElement('script');
-        s.src = ZX_URL; s.async = true;
-        s.onload = () => window.ZXing ? resolve(window.ZXing) : reject(new Error('no ZXing'));
-        s.onerror = () => { zxPromise = null; reject(new Error('load failed')); };
+        s.src = url; s.async = true;
+        s.onload = () => window[globalName] ? resolve(window[globalName]) : reject(new Error('missing ' + globalName));
+        s.onerror = () => { scriptLoads.delete(url); reject(new Error('load failed')); };
         (document.head || document.documentElement).appendChild(s);
-      });
+      }));
     }
-    return zxPromise;
+    return scriptLoads.get(url);
   }
+  const loadZXing = () => loadScript(ZX_URL, 'ZXing');
 
   // ZXing reads one barcode per pass, so blank out each one it finds and read again.
   function eraseAround(ctx, pts, n) {
@@ -695,7 +783,7 @@ legend { padding: 0; margin-bottom: 8px; }
   }
 
   /* ---------- camera ---------- */
-  let stream = null, running = false, busy = false, loopTimer = null, overlayTimer = null, wakeLock = null;
+  let stream = null, running = false, busy = false, loopTimer = null, overlayTimer = null, wakeLock = null, camCount = 0;
   let view = 'off'; // off | live | photo
   let lastInView = 0, lastIgnored = 0, readerError = '';
   const vis = new Map();      // what to outline: key -> {text, points, fw, fh, at, sticky}
@@ -724,6 +812,7 @@ legend { padding: 0; margin-bottom: 8px; }
         return o;
       }));
       if (cur) el.camSelect.value = cur;
+      camCount = devs.length;
       el.camSelectWrap.hidden = devs.length < 2;
       return { devs, cur };
     } catch (e) { return { devs: [], cur: '' }; }
@@ -737,6 +826,7 @@ legend { padding: 0; margin-bottom: 8px; }
 
   async function startCamera() {
     if (!liveAllowed) { setMsg(el.camMsg, 'warn', esc(cameraError({ name: 'NotAllowedError' }))); return; }
+    if (rcv.remote) { sendToPhone({ type: 'bye' }); closePhone(); }
     el.startBtn.disabled = true;
     setMsg(el.camMsg, '', 'Starting the camera&hellip;');
     try {
@@ -785,6 +875,7 @@ legend { padding: 0; margin-bottom: 8px; }
   }
 
   function stopCamera() {
+    if (rcv.remote) { sendToPhone({ type: 'bye' }); closePhone(); render(); return; }
     stopStream();
     if (view === 'live') showView('off');
     render();
@@ -823,6 +914,378 @@ legend { padding: 0; margin-bottom: 8px; }
     drawOverlay();
   }
   el.video.addEventListener('loadedmetadata', () => { if (view === 'live') showView('live'); });
+
+  /* ---------- phone camera streaming (WebRTC, introduced through PeerJS) ---------- */
+  const rcv = { peer: null, id: '', call: null, conn: null, remote: false, device: '', lastSent: '' };
+  let qrShownFor = '';
+
+  function setConn(node, st, text) { node.dataset.state = st; node.textContent = text; }
+  function randomId() {
+    const a = new Uint8Array(10);
+    crypto.getRandomValues(a);
+    return 'bcs-' + Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  function peerErrorText(err, side) {
+    const t = err && err.type;
+    if (t === 'peer-unavailable') return 'The scanner isn’t waiting for this phone any more. On the computer, open Connect a phone and scan the new code.';
+    if (t === 'browser-incompatible') return 'This browser can’t stream video. Use Safari or Chrome.';
+    if (side === 'mac' && ['network', 'socket-error', 'socket-closed', 'server-error', 'disconnected'].includes(t)) {
+      return 'Can’t reach the connection service. Check the internet connection. Inside claude.ai this can’t work, so open ' + HOSTED_URL + ' instead.';
+    }
+    if (['network', 'socket-error', 'socket-closed', 'server-error', 'disconnected'].includes(t)) return 'Can’t reach the connection service. Check the internet connection, then tap Reconnect.';
+    return 'The connection failed. Try again.';
+  }
+  const connectUrl = () => HOSTED_URL + '#cam=' + rcv.id;
+
+  async function drawQr(text) {
+    if (qrShownFor === text) return;
+    try {
+      const qrcode = await loadScript(QR_URL, 'qrcode');
+      const qr = qrcode(0, 'M');
+      qr.addData(text);
+      qr.make();
+      const n = qr.getModuleCount(), m = 4, size = n + m * 2;
+      let d = '';
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
+      el.qr.innerHTML = `<svg viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+        `<rect width="${size}" height="${size}" style="fill:var(--qr-paper)"/><path d="${d}" style="fill:var(--qr-ink)"/></svg>`;
+      qrShownFor = text;
+    } catch (e) {
+      setMsg(el.connectMsg, 'warn', 'The QR code couldn’t load. Copy the link and open it on the phone instead.');
+    }
+  }
+
+  function showConnectCode() {
+    const url = connectUrl();
+    el.connectUrl.textContent = url;
+    el.connectCopy.disabled = false;
+    drawQr(url);
+  }
+  function closeConnectPanel() {
+    el.connect.hidden = true;
+    el.connectBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  async function openConnect() {
+    el.connect.hidden = false;
+    el.connectBtn.setAttribute('aria-expanded', 'true');
+    if (rcv.peer && !rcv.peer.destroyed) { if (rcv.peer.open) showConnectCode(); return; }
+    setConn(el.rcvState, 'wait', 'Starting…');
+    setMsg(el.connectMsg, '', '');
+    let PeerCls;
+    try { PeerCls = await loadScript(PEER_URL, 'Peer'); }
+    catch (e) { setConn(el.rcvState, 'error', 'The connection library couldn’t load. Check the internet connection.'); return; }
+    rcv.id = randomId();
+    const peer = new PeerCls(rcv.id, { debug: 1 });
+    rcv.peer = peer;
+    peer.on('open', () => { showConnectCode(); if (!rcv.remote) setConn(el.rcvState, 'wait', 'Waiting for a phone…'); });
+    peer.on('call', acceptCall);
+    peer.on('connection', acceptConn);
+    peer.on('disconnected', () => { if (!peer.destroyed) { try { peer.reconnect(); } catch (e) {} } });
+    peer.on('error', err => {
+      if (err && err.type === 'unavailable-id') { peer.destroy(); rcv.peer = null; openConnect(); return; }
+      if (err && err.type === 'peer-unavailable') return;
+      setConn(el.rcvState, 'error', peerErrorText(err, 'mac'));
+    });
+  }
+
+  function acceptCall(call) {
+    if (rcv.call && rcv.call !== call) { try { rcv.call.close(); } catch (e) {} }
+    rcv.call = call;
+    call.answer();
+    call.on('stream', remote => {
+      if (rcv.call !== call) return;
+      if (stream) stopStream();
+      rcv.remote = true;
+      el.video.srcObject = remote;
+      el.video.muted = true;
+      el.video.play().catch(() => {});
+      running = true;
+      showView('live');
+      getEngine().catch(() => {});
+      clearTimeout(loopTimer);
+      loop();
+      if (!overlayTimer) overlayTimer = setInterval(drawOverlay, 250);
+      const who = rcv.device || 'Phone';
+      setConn(el.rcvState, 'live', `${who} connected`);
+      closeConnectPanel();
+      setMsg(el.camMsg, 'ok', esc(`${who} camera connected. ${state.box ? 'Point it into the box.' : 'Point it at the box label first.'}`));
+      rcv.lastSent = '';
+      render();
+    });
+    call.on('close', () => phoneGone(call));
+    call.on('error', () => phoneGone(call));
+    const pc = call.peerConnection;
+    if (pc) pc.addEventListener('iceconnectionstatechange', () => {
+      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') phoneGone(call);
+    });
+  }
+
+  function phoneGone(call) {
+    if (rcv.call !== call) return;
+    rcv.call = null;
+    if (rcv.remote) {
+      rcv.remote = false;
+      running = false;
+      clearTimeout(loopTimer);
+      el.video.srcObject = null;
+      if (view === 'live') showView('off');
+    }
+    setConn(el.rcvState, 'wait', 'Phone disconnected. Waiting for it to reconnect…');
+    setMsg(el.camMsg, 'warn', 'The phone disconnected. Tap Reconnect on the phone, or scan the code again.', { label: 'Show the code', fn: openConnect });
+    render();
+  }
+  function closePhone() {
+    const call = rcv.call;
+    if (call) { phoneGone(call); try { call.close(); } catch (e) {} }
+    setConn(el.rcvState, 'wait', 'Waiting for a phone…');
+    setMsg(el.camMsg, '', '');
+  }
+
+  function acceptConn(conn) {
+    if (rcv.conn && rcv.conn !== conn) { try { rcv.conn.close(); } catch (e) {} }
+    rcv.conn = conn;
+    conn.on('open', () => { rcv.lastSent = ''; sendState(); });
+    conn.on('data', d => {
+      if (d && d.type === 'hello' && typeof d.device === 'string') {
+        rcv.device = d.device.replace(/[^\w .'-]/g, '').slice(0, 40) || 'Phone';
+        if (rcv.remote) setConn(el.rcvState, 'live', `${rcv.device} connected`);
+        renderLiveStatus();
+      }
+    });
+    conn.on('close', () => { if (rcv.conn === conn) rcv.conn = null; });
+  }
+  function sendToPhone(msg) { try { if (rcv.conn && rcv.conn.open) rcv.conn.send(msg); } catch (e) {} }
+  function sendState() {
+    if (!rcv.conn || !rcv.conn.open) return;
+    const msg = { type: 'state', box: state.box || '', total: state.items.length };
+    const key = JSON.stringify(msg);
+    if (key === rcv.lastSent) return;
+    rcv.lastSent = key;
+    sendToPhone(msg);
+  }
+
+  /* The phone side: opened from the QR code as HOSTED_URL#cam=<scanner id> */
+  const snd = { target: '', peer: null, call: null, conn: null, stream: null, cams: [], camIdx: 0, wake: null, flashT: 0 };
+
+  function deviceName() {
+    const ua = navigator.userAgent || '';
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
+    if (/Android/.test(ua)) return 'Android phone';
+    return 'Phone';
+  }
+  function senderCamError(e) {
+    const n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') return 'Camera access was blocked. Allow the camera for this site in your browser settings, then tap Start streaming.';
+    if (n === 'NotReadableError') return 'The camera is busy in another app. Close that app and try again.';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No camera found on this device.';
+    return 'The camera could not start. Try again.';
+  }
+  function senderFail(text) {
+    setConn(el.sndState, 'error', 'Not connected');
+    setMsg(el.sndMsg, 'warn', esc(text));
+    el.sndRetry.hidden = !snd.stream;
+  }
+  function flashSender() {
+    el.sndFlash.classList.remove('on');
+    void el.sndFlash.offsetWidth;
+    el.sndFlash.classList.add('on');
+    clearTimeout(snd.flashT);
+    snd.flashT = setTimeout(() => el.sndFlash.classList.remove('on'), 120);
+  }
+
+  function initSender(target) {
+    snd.target = target;
+    document.body.dataset.mode = 'sender';
+    el.sender.hidden = false;
+    document.title = 'Phone camera · Box Camera Scanner';
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      el.sndStart.disabled = true;
+      setMsg(el.sndMsg, 'warn', 'This browser can’t use the camera here. Open the link in Safari or Chrome.');
+    }
+    el.sndStart.addEventListener('click', senderStart);
+    el.sndStop.addEventListener('click', senderStop);
+    el.sndRetry.addEventListener('click', () => senderConnect());
+    el.sndSwitch.addEventListener('click', senderSwitch);
+    el.sndVideo.addEventListener('loadedmetadata', () => {
+      if (el.sndVideo.videoWidth) el.sndVp.style.aspectRatio = `${el.sndVideo.videoWidth} / ${el.sndVideo.videoHeight}`;
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !snd.stream) return;
+      const tr = snd.stream.getVideoTracks()[0];
+      if (!tr || tr.readyState === 'ended') {
+        senderStop();
+        setMsg(el.sndMsg, 'warn', 'The camera stopped while this page was in the background. Tap Start streaming.');
+      }
+    });
+  }
+
+  async function senderGetCamera(deviceId) {
+    const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    const video = deviceId ? Object.assign({ deviceId: { exact: deviceId } }, size) : Object.assign({ facingMode: { ideal: 'environment' } }, size);
+    const s = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+    const tr = s.getVideoTracks()[0];
+    try { if (tr && 'contentHint' in tr) tr.contentHint = 'detail'; } catch (e) {}
+    return s;
+  }
+
+  async function senderStart() {
+    el.sndStart.disabled = true;
+    try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch (e) {}
+    try {
+      snd.stream = await senderGetCamera('');
+    } catch (e) {
+      el.sndStart.disabled = false;
+      setMsg(el.sndMsg, 'warn', esc(senderCamError(e)));
+      return;
+    }
+    el.sndVideo.srcObject = snd.stream;
+    el.sndVideo.play().catch(() => {});
+    el.sndEmpty.hidden = true;
+    el.sndStart.disabled = false;
+    el.sndStop.hidden = false;
+    setMsg(el.sndMsg, '', '');
+    try { if (navigator.wakeLock) snd.wake = await navigator.wakeLock.request('screen'); } catch (e) {}
+    try {
+      snd.cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const cur = snd.stream.getVideoTracks()[0].getSettings().deviceId;
+      snd.camIdx = Math.max(0, snd.cams.findIndex(d => d.deviceId === cur));
+      el.sndSwitch.hidden = snd.cams.length < 2;
+    } catch (e) {}
+    senderConnect();
+  }
+
+  function tuneSender(call) {
+    try {
+      const pc = call.peerConnection;
+      const sender = pc && pc.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (!sender || !sender.getParameters) return;
+      const apply = withPref => {
+        const p = sender.getParameters();
+        if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+        p.encodings[0].maxBitrate = 5000000;
+        if (withPref) p.degradationPreference = 'maintain-resolution';
+        return sender.setParameters(p);
+      };
+      apply(true).catch(() => apply(false).catch(() => {}));
+    } catch (e) {}
+  }
+
+  async function senderConnect() {
+    el.sndRetry.hidden = true;
+    if (!snd.stream) return;
+    setConn(el.sndState, 'wait', 'Connecting…');
+    setMsg(el.sndMsg, '', '');
+    try { if (snd.call) snd.call.close(); } catch (e) {}
+    try { if (snd.conn) snd.conn.close(); } catch (e) {}
+    snd.call = null; snd.conn = null;
+    let PeerCls;
+    try { PeerCls = await loadScript(PEER_URL, 'Peer'); }
+    catch (e) { senderFail('The connection library couldn’t load. Check the internet connection, then tap Reconnect.'); return; }
+    if (!snd.peer || snd.peer.destroyed) {
+      const p = new PeerCls({ debug: 1 });
+      snd.peer = p;
+      p.on('error', err => senderFail(peerErrorText(err, 'phone')));
+      p.on('disconnected', () => { if (!p.destroyed) { try { p.reconnect(); } catch (e) {} } });
+    }
+    const peer = snd.peer;
+    if (!peer.open) {
+      const ok = await new Promise(resolve => {
+        const t = setTimeout(() => resolve(false), 15000);
+        peer.once('open', () => { clearTimeout(t); resolve(true); });
+        peer.once('error', () => { clearTimeout(t); resolve(false); });
+      });
+      if (!ok) {
+        if (el.sndState.dataset.state !== 'error') senderFail('Can’t reach the connection service. Check the internet connection, then tap Reconnect.');
+        return;
+      }
+    }
+    const conn = peer.connect(snd.target, { serialization: 'json', reliable: true });
+    snd.conn = conn;
+    conn.on('open', () => { try { conn.send({ type: 'hello', device: deviceName() }); } catch (e) {} });
+    conn.on('data', onScannerMessage);
+    const call = peer.call(snd.target, snd.stream);
+    snd.call = call;
+    if (!call) { senderFail('The connection failed. Tap Reconnect.'); return; }
+    call.on('close', () => { if (snd.call === call) senderFail('The scanner closed the connection. Tap Reconnect, or scan its code again.'); });
+    call.on('error', () => { if (snd.call === call) senderFail('Lost the connection to the scanner. Tap Reconnect.'); });
+    const attach = () => {
+      if (snd.call !== call) return;
+      const pc = call.peerConnection;
+      if (!pc) { setTimeout(attach, 200); return; }
+      const watch = () => {
+        if (snd.call !== call) return;
+        const s = pc.iceConnectionState;
+        if (s === 'connected' || s === 'completed') { setConn(el.sndState, 'live', 'Streaming to the scanner'); tuneSender(call); }
+        else if (s === 'disconnected') setConn(el.sndState, 'wait', 'Connection unstable…');
+        else if (s === 'failed' || s === 'closed') senderFail('Lost the connection to the scanner. Tap Reconnect.');
+      };
+      pc.addEventListener('iceconnectionstatechange', watch);
+      watch();
+    };
+    attach();
+  }
+
+  async function senderSwitch() {
+    if (snd.cams.length < 2 || !snd.stream) return;
+    snd.camIdx = (snd.camIdx + 1) % snd.cams.length;
+    const dev = snd.cams[snd.camIdx];
+    snd.stream.getTracks().forEach(t => t.stop());
+    let s;
+    try { s = await senderGetCamera(dev.deviceId); }
+    catch (e) {
+      try { s = await senderGetCamera(''); } catch (e2) { senderStop(); setMsg(el.sndMsg, 'warn', esc(senderCamError(e2))); return; }
+      setMsg(el.sndMsg, 'warn', 'That camera couldn’t start, so the main camera is back on.');
+    }
+    snd.stream = s;
+    el.sndVideo.srcObject = s;
+    el.sndVideo.play().catch(() => {});
+    try {
+      const pc = snd.call && snd.call.peerConnection;
+      const sender = pc && pc.getSenders().find(x => x.track === null || (x.track && x.track.kind === 'video'));
+      if (sender) await sender.replaceTrack(s.getVideoTracks()[0]);
+    } catch (e) {}
+    const label = s.getVideoTracks()[0].label;
+    if (label) setMsg(el.sndMsg, '', esc(`Using ${label}.`));
+  }
+
+  function senderStop() {
+    try { if (snd.call) snd.call.close(); } catch (e) {}
+    try { if (snd.conn) snd.conn.close(); } catch (e) {}
+    snd.call = null; snd.conn = null;
+    if (snd.stream) snd.stream.getTracks().forEach(t => t.stop());
+    snd.stream = null;
+    el.sndVideo.srcObject = null;
+    el.sndEmpty.hidden = false;
+    el.sndStop.hidden = true;
+    el.sndSwitch.hidden = true;
+    el.sndRetry.hidden = true;
+    setConn(el.sndState, 'idle', 'Not connected');
+    try { if (snd.wake) { snd.wake.release(); snd.wake = null; } } catch (e) {}
+  }
+
+  function onScannerMessage(d) {
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'state') {
+      const box = typeof d.box === 'string' ? d.box.slice(0, 60) : '';
+      const total = Number.isFinite(d.total) ? d.total : 0;
+      el.sndCount.textContent = box ? `Box ${box} · ${plural(total, 'item')}` : 'Step 1: point at the box label';
+    } else if (d.type === 'added' && Array.isArray(d.codes)) {
+      const codes = d.codes.filter(c => typeof c === 'string').slice(0, 4).map(c => c.slice(0, 40));
+      flashSender(); beep('ok');
+      try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) {}
+      setMsg(el.sndMsg, 'ok', esc('Added ' + codes.join(', ')));
+    } else if (d.type === 'box' && typeof d.box === 'string') {
+      flashSender(); beep('ok');
+      try { if (navigator.vibrate) navigator.vibrate([40, 60, 40]); } catch (e) {}
+      setMsg(el.sndMsg, 'ok', esc(`Box ${d.box.slice(0, 60)} set. Now point into the box.`));
+    } else if (d.type === 'bye') {
+      try { if (snd.call) snd.call.close(); } catch (e) {}
+      snd.call = null;
+      senderFail('The scanner ended the connection. Tap Reconnect, or scan its code again.');
+    }
+  }
 
   /* ---------- photos ---------- */
   async function processPhotos(files) {
@@ -907,6 +1370,7 @@ legend { padding: 0; margin-bottom: 8px; }
         save(); beep('ok');
         const shown = added.slice(0, 4).map(t => `<span class="code-inline">${esc(t)}</span>`).join(', ');
         setMsg(el.itemMsg, 'ok', `Added ${shown}${added.length > 4 ? ` and ${added.length - 4} more` : ''}`);
+        sendToPhone({ type: 'added', codes: added.slice(0, 4), total: state.items.length });
         render(added);
       }
     }
@@ -987,6 +1451,7 @@ legend { padding: 0; margin-bottom: 8px; }
     cands.clear(); pending.clear();
     for (const k of [...state.items.keys()].reverse()) if (isBox(state.items[k].code)) state.items.splice(k, 1);
     save(); beep('ok');
+    sendToPhone({ type: 'box', box: value });
     setMsg(el.boxMsg, '', '');
     const n = state.items.length;
     if (source === 'photo' && photoLeftovers.length) {
@@ -1216,6 +1681,7 @@ legend { padding: 0; margin-bottom: 8px; }
   function renderLiveStatus() {
     renderCands();
     const parts = [];
+    if (rcv.remote) parts.push(`${rcv.device || 'phone'} camera`);
     if (engine) parts.push(engine.label);
     if (view !== 'off') parts.push(`${plural(lastInView, 'barcode')} in view`);
     if (lastIgnored) parts.push(`${lastIgnored} ignored`);
@@ -1299,8 +1765,13 @@ legend { padding: 0; margin-bottom: 8px; }
     }
 
     el.stopBtn.hidden = !running;
+    el.stopBtn.textContent = rcv.remote ? 'Disconnect phone' : 'Stop camera';
+    el.camSelectWrap.hidden = rcv.remote || !stream || camCount < 2;
+    el.connectBtn.hidden = !liveAllowed;
+    el.vpConnectBtn.hidden = !liveAllowed;
     el.liveBtn.hidden = view !== 'photo';
     el.liveBtn.textContent = running ? 'Back to live view' : 'Close photo';
+    sendState();
     renderLiveStatus();
     drawOverlay();
   }
@@ -1434,6 +1905,16 @@ legend { padding: 0; margin-bottom: 8px; }
   });
   el.copyBtn.addEventListener('click', copySql);
 
+  el.connectBtn.addEventListener('click', () => { if (el.connect.hidden) openConnect(); else closeConnectPanel(); });
+  el.vpConnectBtn.addEventListener('click', () => { openConnect(); el.connect.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' }); });
+  el.connectClose.addEventListener('click', closeConnectPanel);
+  el.connectCopy.addEventListener('click', () => {
+    const url = connectUrl();
+    const fail = () => { selectNode(el.connectUrl); setMsg(el.connectMsg, 'warn', 'Copying was blocked. The link is selected, so press ⌘C or Ctrl+C.'); };
+    try { navigator.clipboard.writeText(url).then(() => setMsg(el.connectMsg, 'ok', 'Link copied. Open it on the phone.'), fail); } catch (e) { fail(); }
+  });
+  window.addEventListener('pagehide', () => sendToPhone({ type: 'bye' }));
+
   el.jobInput.addEventListener('input', () => { state.jobId = el.jobInput.value.trim(); save(); render(); });
   el.settingsBtn.addEventListener('click', () => openSettings(el.settings.hidden));
   el.settingsClose.addEventListener('click', () => openSettings(false));
@@ -1452,6 +1933,9 @@ legend { padding: 0; margin-bottom: 8px; }
   el.sound.addEventListener('change', () => { state.sound = el.sound.checked; save(); });
 
   /* ---------- start ---------- */
+  const camTarget = (/^#cam=([A-Za-z0-9_-]{6,64})$/.exec(location.hash) || [])[1] || '';
+  if (camTarget) { initSender(camTarget); return; }
+
   el.jobInput.value = state.jobId;
   syncSettings();
   if (!liveAllowed) {
